@@ -1,2 +1,2 @@
 # LetterManagementSystem
-Project Kerja Praktek
+Project KP
