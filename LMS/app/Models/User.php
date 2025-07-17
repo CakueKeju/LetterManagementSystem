@@ -17,6 +17,7 @@ class User extends Authenticatable
         'full_name',
         'divisi_id',
         'is_active',
+        'is_admin',
     ];
 
     protected $hidden = [
@@ -25,8 +26,8 @@ class User extends Authenticatable
     ];
 
     protected $casts = [
-        'email_verified_at' => 'datetime',
         'is_active' => 'boolean',
+        'is_admin' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -73,6 +74,11 @@ class User extends Authenticatable
     // Helper methods
     public function canAccessSurat(Surat $surat)
     {
+        // Admin can access all surat
+        if ($this->is_admin) {
+            return true;
+        }
+
         // Jika surat public dan user dalam divisi yang sama
         if (!$surat->is_private && $this->divisi_id == $surat->divisi_id) {
             return true;
@@ -89,5 +95,10 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+
+    public function isAdmin()
+    {
+        return $this->is_admin;
     }
 }

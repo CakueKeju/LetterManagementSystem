@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('full_name', 100);
             $table->foreignId('divisi_id')->constrained('divisions');
             $table->boolean('is_active')->default(true);
-            $table->timestamp('email_verified_at')->nullable();
+            $table->boolean('is_admin')->default(false);
             $table->rememberToken();
             $table->timestamps();
             $table->index('divisi_id', 'idx_users_divisi');

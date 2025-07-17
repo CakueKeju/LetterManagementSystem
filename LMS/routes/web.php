@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SuratController;
+use App\Http\Controllers\AdminController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -16,3 +17,39 @@ Route::get('/surat/upload', [SuratController::class, 'showUploadForm'])->name('s
 Route::post('/surat/upload', [SuratController::class, 'handleUpload'])->name('surat.handleUpload');
 Route::get('/surat/confirm', [SuratController::class, 'showConfirmForm'])->name('surat.confirm');
 Route::post('/surat/store', [SuratController::class, 'store'])->name('surat.store');
+Route::get('/surat/users-for-access', [SuratController::class, 'getUsersForAccess'])->name('surat.getUsersForAccess');
+
+// Admin Routes
+Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
+    
+    // Surat Management
+    Route::get('/surat', [AdminController::class, 'suratIndex'])->name('surat.index');
+    Route::get('/surat/{id}/edit', [AdminController::class, 'suratEdit'])->name('surat.edit');
+    Route::put('/surat/{id}', [AdminController::class, 'suratUpdate'])->name('surat.update');
+    Route::delete('/surat/{id}', [AdminController::class, 'suratDestroy'])->name('surat.destroy');
+    
+    // User Management
+    Route::get('/users', [AdminController::class, 'usersIndex'])->name('users.index');
+    Route::get('/users/create', [AdminController::class, 'usersCreate'])->name('users.create');
+    Route::post('/users', [AdminController::class, 'usersStore'])->name('users.store');
+    Route::get('/users/{id}/edit', [AdminController::class, 'usersEdit'])->name('users.edit');
+    Route::put('/users/{id}', [AdminController::class, 'usersUpdate'])->name('users.update');
+    Route::delete('/users/{id}', [AdminController::class, 'usersDestroy'])->name('users.destroy');
+    
+    // Division Management
+    Route::get('/divisions', [AdminController::class, 'divisionsIndex'])->name('divisions.index');
+    Route::get('/divisions/create', [AdminController::class, 'divisionsCreate'])->name('divisions.create');
+    Route::post('/divisions', [AdminController::class, 'divisionsStore'])->name('divisions.store');
+    Route::get('/divisions/{id}/edit', [AdminController::class, 'divisionsEdit'])->name('divisions.edit');
+    Route::put('/divisions/{id}', [AdminController::class, 'divisionsUpdate'])->name('divisions.update');
+    Route::delete('/divisions/{id}', [AdminController::class, 'divisionsDestroy'])->name('divisions.destroy');
+    
+    // Jenis Surat Management
+    Route::get('/jenis-surat', [AdminController::class, 'jenisSuratIndex'])->name('jenis-surat.index');
+    Route::get('/jenis-surat/create', [AdminController::class, 'jenisSuratCreate'])->name('jenis-surat.create');
+    Route::post('/jenis-surat', [AdminController::class, 'jenisSuratStore'])->name('jenis-surat.store');
+    Route::get('/jenis-surat/{id}/edit', [AdminController::class, 'jenisSuratEdit'])->name('jenis-surat.edit');
+    Route::put('/jenis-surat/{id}', [AdminController::class, 'jenisSuratUpdate'])->name('jenis-surat.update');
+    Route::delete('/jenis-surat/{id}', [AdminController::class, 'jenisSuratDestroy'])->name('jenis-surat.destroy');
+});

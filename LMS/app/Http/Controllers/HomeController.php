@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Surat;
+use App\Models\Division;
+use App\Models\JenisSurat;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
@@ -21,8 +26,62 @@ class HomeController extends Controller
      *
      * @return \Illuminate\Contracts\Support\Renderable
      */
-    public function index()
+    public function index(Request $request)
     {
-        return view('home');
+        $query = Surat::query();
+
+        // Filter based on user access
+        $user = Auth::user();
+        
+        // Show public surat from same division OR private surat that user has access to
+        $query->where(function($q) use ($user) {
+            // Public surat from same division
+            $q->where(function($subQ) use ($user) {
+                $subQ->where('is_private', false)
+                     ->where('divisi_id', $user->divisi_id);
+            });
+            
+            // OR private surat that user uploaded
+            $q->orWhere('uploaded_by', $user->id);
+            
+            // OR private surat that user has access to
+            $q->orWhereExists(function($existsQuery) use ($user) {
+                $existsQuery->select(\DB::raw(1))
+                           ->from('surat_access')
+                           ->whereColumn('surat_access.surat_id', 'surat.id')
+                           ->where('surat_access.user_id', $user->id);
+            });
+        });
+
+        // Additional filtering
+        if ($request->filled('divisi_id')) {
+            $query->where('divisi_id', $request->divisi_id);
+        }
+        if ($request->filled('jenis_surat_id')) {
+            $query->where('jenis_surat_id', $request->jenis_surat_id);
+        }
+        if ($request->filled('tanggal_surat')) {
+            $query->where('tanggal_surat', $request->tanggal_surat);
+        }
+        if ($request->filled('is_private')) {
+            $query->where('is_private', $request->is_private);
+        }
+
+        // Sorting
+        $sort = $request->get('sort', 'newest');
+        if ($sort === 'oldest') {
+            $query->orderBy('created_at', 'asc');
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
+
+        $letters = $query->paginate(15);
+
+        return view('home', [
+            'letters' => $letters,
+            'filters' => $request->only(['divisi_id', 'jenis_surat_id', 'tanggal_surat', 'is_private', 'sort']),
+            'divisions' => Division::all(),
+            'jenisSurat' => JenisSurat::active()->get(),
+        ]);
     }
 }
