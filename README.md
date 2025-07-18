@@ -48,7 +48,7 @@ A web-based platform for uploading, managing, and searching official letters wit
 ## Installation
 
 ```sh
-git clone <your-repo-url>
+git clone <https://github.com/CakueKeju/LetterManagementSystem>
 cd LetterManagementSystem/LMS
 
 composer install
