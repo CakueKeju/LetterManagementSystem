@@ -13,7 +13,6 @@
             <p class="lead mb-4">A centralized platform for uploading, managing, and searching official letters in your organization.</p>
             <div class="mb-4">
                 <a href="{{ route('login') }}" class="btn btn-primary btn-lg me-2">Login</a>
-                <a href="{{ route('register') }}" class="btn btn-outline-primary btn-lg">Register</a>
             </div>
             <hr>
             <p class="text-muted">&copy; {{ date('Y') }} Letter Management System. All rights reserved.</p>

@@ -44,9 +44,7 @@
                                 </select>
                             </div>
                             <div class="col-md-2">
-                                <button type="submit" class="btn btn-primary w-100">
-                                    <i class="fas fa-search"></i>
-                                </button>
+                                <button type="submit" class="btn btn-primary w-100">Cari</button>
                             </div>
                         </div>
                     </form>
