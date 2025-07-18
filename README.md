@@ -48,7 +48,7 @@ A web-based platform for uploading, managing, and searching official letters wit
 ## Installation
 
 ```sh
-git clone <https://github.com/CakueKeju/LetterManagementSystem>
+git clone https://github.com/CakueKeju/LetterManagementSystem
 cd LetterManagementSystem/LMS
 
 composer install
@@ -208,8 +208,6 @@ export default defineConfig({
 
 ## License
 
-This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+<!-- This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT). -->
 
 ---
-
-**For more details, see the code and comments in each file. If you need further breakdown of any part, let me know!**
