@@ -77,11 +77,26 @@ class HomeController extends Controller
 
         $letters = $query->paginate(15);
 
+        // Calculate next available nomor urut for the user's division
+        $userDivisionId = $user->divisi_id;
+        $existingNumbers = Surat::where('divisi_id', $userDivisionId)
+            ->pluck('nomor_urut')
+            ->sort()
+            ->values();
+        $nextNomorUrut = 1;
+        foreach ($existingNumbers as $existingNumber) {
+            if ($existingNumber > $nextNomorUrut) {
+                break;
+            }
+            $nextNomorUrut = $existingNumber + 1;
+        }
+
         return view('home', [
             'letters' => $letters,
             'filters' => $request->only(['divisi_id', 'jenis_surat_id', 'tanggal_surat', 'is_private', 'sort']),
             'divisions' => Division::all(),
             'jenisSurat' => JenisSurat::active()->get(),
+            'available_nomor_urut' => $nextNomorUrut,
         ]);
     }
 }

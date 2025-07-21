@@ -208,15 +208,15 @@ class SuratController extends Controller
     public function getUsersForAccess(Request $request)
     {
         $search = $request->get('search', '');
-        
-        $users = \App\Models\User::where('id', '!=', Auth::id()) // Exclude current user
+        // Only non-admin users, no limit
+        $users = \App\Models\User::where('id', '!=', Auth::id())
+                    ->where('is_admin', false)
                     ->where(function($query) use ($search) {
                         $query->where('full_name', 'like', "%{$search}%")
                               ->orWhere('username', 'like', "%{$search}%")
                               ->orWhere('email', 'like', "%{$search}%");
                     })
                     ->orderBy('full_name')
-                    ->limit(30)
                     ->get(['id', 'full_name', 'username', 'email', 'divisi_id']);
 
         return response()->json($users);

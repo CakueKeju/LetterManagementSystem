@@ -2,9 +2,14 @@
 
 @section('content')
 <div class="container">
+    <h2 class="mb-4">Daftar Surat</h2>
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Daftar Surat</h2>
-        <a href="{{ route('surat.upload') }}" class="btn btn-success d-none d-md-inline-block">
+        <div>
+            <div class="alert alert-info mb-0" style="max-width: 350px;">
+                <strong>Nomor Urut Tersedia:</strong> <span class="badge bg-primary">{{ $available_nomor_urut }}</span>
+            </div>
+        </div>
+        <a href="{{ route('surat.upload') }}" class="btn btn-success">
             <i class="fas fa-plus me-2"></i>Upload Surat
         </a>
     </div>
@@ -108,7 +113,7 @@
     </div>
 </div>
 <!-- Floating Upload Button (visible on all screens) -->
-<a href="{{ route('surat.upload') }}" class="btn btn-success btn-lg rounded-circle shadow position-fixed" style="bottom: 30px; right: 30px; z-index: 1050;" title="Upload Surat">
+{{-- <a href="{{ route('surat.upload') }}" class="btn btn-success btn-lg rounded-circle shadow position-fixed" style="bottom: 30px; right: 30px; z-index: 1050;" title="Upload Surat">
     <i class="fas fa-plus"></i>
-</a>
+</a> --}}
 @endsection

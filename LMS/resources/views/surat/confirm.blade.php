@@ -170,7 +170,7 @@
                             
                             <div class="mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="text-muted">Daftar User (Maksimal 30 user)</span>
+                                    <label class="form-label">Daftar User:</label>
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllUsers()">Pilih Semua</button>
                                 </div>
                                 <div id="userList" class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
@@ -184,7 +184,7 @@
                                 <small>
                                     <i class="fas fa-info-circle"></i>
                                     <strong>Info:</strong> User yang dipilih akan dapat mengakses surat private ini. 
-                                    Jika tidak ada user yang dipilih, hanya Anda yang dapat mengakses.
+                                    Jika tidak ada user yang dipilih, hanya Anda dan Admin yang dapat mengakses.
                                 </small>
                             </div>
                         </div>
