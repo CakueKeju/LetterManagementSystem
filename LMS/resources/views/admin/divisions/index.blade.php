@@ -42,8 +42,17 @@
                                         </td>
                                         <td>{{ $division->nama_divisi }}</td>
                                         <td>{{ Str::limit($division->deskripsi, 50) ?: 'Tidak ada deskripsi' }}</td>
-                                        <td>
-                                            <span class="badge bg-info">{{ $division->users_count }}</span>
+                                        <td class="align-middle">
+                                            <span class="badge bg-info">{{ $division->users_count ?? 0 }}</span>
+                                            @if($division->users_count > 0)
+                                                <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" type="button" data-bs-toggle="collapse" data-bs-target="#users-{{ $division->id }}" aria-expanded="false" aria-controls="users-{{ $division->id }}" title="Lihat Member" style="text-decoration: none;">
+                                                    <span style="font-size:1rem;">&#9660;</span>
+                                                </button>
+                                            @else
+                                                <button class="btn btn-link btn-sm p-0 ms-2 align-baseline text-secondary" type="button" disabled title="Tidak ada member" style="text-decoration: none;">
+                                                    <span style="font-size:1rem;">&#9660;</span>
+                                                </button>
+                                            @endif
                                         </td>
                                         <td>
                                             <span class="badge bg-primary">{{ $division->surat_count ?? 0 }}</span>
@@ -72,6 +81,22 @@
                                                     <button type="button" class="btn btn-sm btn-danger" disabled title="Tidak dapat dihapus karena masih memiliki users atau surat">
                                                         <i class="fa-solid fa-trash"></i> Hapus
                                                     </button>
+                                                @endif
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="collapse" id="users-{{ $division->id }}">
+                                        <td colspan="7">
+                                            <div class="card card-body mb-2">
+                                                <strong>Daftar User di Divisi {{ $division->nama_divisi }}:</strong>
+                                                @if($division->users && count($division->users) > 0)
+                                                    <ul class="mb-0">
+                                                        @foreach($division->users as $user)
+                                                            <li>{{ $user->full_name }} <small class="text-muted">({{ $user->username }} - {{ $user->email }})</small></li>
+                                                        @endforeach
+                                                    </ul>
+                                                @else
+                                                    <span class="text-muted">Tidak ada user di divisi ini.</span>
                                                 @endif
                                             </div>
                                         </td>

@@ -2,7 +2,7 @@
 
 @section('content')
 <div class="container">
-    <h2>Upload Surat - Step 1</h2>
+    <h2>Upload Surat</h2>
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif

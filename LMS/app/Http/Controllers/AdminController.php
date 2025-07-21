@@ -324,7 +324,7 @@ class AdminController extends Controller
      */
     public function divisionsIndex()
     {
-        $divisions = Division::withCount('users')->paginate(20);
+        $divisions = Division::withCount('users')->with('users')->paginate(20);
         return view('admin.divisions.index', compact('divisions'));
     }
 
@@ -357,8 +357,9 @@ class AdminController extends Controller
      */
     public function divisionsEdit($id)
     {
-        $division = Division::findOrFail($id);
-        return view('admin.divisions.edit', compact('division'));
+        $division = Division::withCount('users', 'surat')->with('users')->findOrFail($id);
+        $allUsers = \App\Models\User::all();
+        return view('admin.divisions.edit', compact('division', 'allUsers'));
     }
 
     /**
@@ -375,6 +376,13 @@ class AdminController extends Controller
         ]);
 
         $division->update($request->all());
+
+        // Sync division members
+        if ($request->has('division_users')) {
+            $division->users()->sync($request->input('division_users'));
+        } else {
+            $division->users()->sync([]);
+        }
 
         return redirect()->route('admin.divisions.index')->with('success', 'Divisi berhasil diperbarui!');
     }

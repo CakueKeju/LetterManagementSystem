@@ -297,22 +297,33 @@ class SuratController extends Controller
 
         // Try to extract nomor_urut and other data from extracted text
         if ($extractedText) {
-            // Look for "Nomor:" pattern like "Nomor: 123/OPS/BAST/INTENS/2022"
-            if (preg_match('/Nomor:\s*(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/(\d{4})/i', $extractedText, $matches)) {
+            // Normalize text: remove double slashes, extra spaces
+            $normalizedText = preg_replace('/\/\/+/', '/', $extractedText);
+            $normalizedText = preg_replace('/\s+/', ' ', $normalizedText);
+
+            // Improved pattern: allow for optional double slashes and extra spaces
+            if (preg_match('/Nomor:\s*(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
                 $data['nomor_urut'] = trim($matches[1]);
                 $data['divisi_id'] = $this->findDivisiByKode(trim($matches[2]));
                 $data['jenis_surat_id'] = $this->findJenisSuratByKode(trim($matches[3]));
-                $data['tanggal_surat'] = $this->extractDateFromText($extractedText);
+                $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
             }
             // Alternative pattern: "Nomor: 123/ABC/DEF/INTENS/2023" (without "Nomor:")
-            elseif (preg_match('/(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/(\d{4})/i', $extractedText, $matches)) {
+            elseif (preg_match('/(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
                 $data['nomor_urut'] = trim($matches[1]);
                 $data['divisi_id'] = $this->findDivisiByKode(trim($matches[2]));
                 $data['jenis_surat_id'] = $this->findJenisSuratByKode(trim($matches[3]));
-                $data['tanggal_surat'] = $this->extractDateFromText($extractedText);
+                $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
+            }
+            // Fuzzy fallback: look for 'OPS' and 'BAST' in the text if not found
+            if (!$data['divisi_id'] && stripos($normalizedText, 'OPS') !== false) {
+                $data['divisi_id'] = $this->findDivisiByKode('OPS');
+            }
+            if (!$data['jenis_surat_id'] && stripos($normalizedText, 'BAST') !== false) {
+                $data['jenis_surat_id'] = $this->findJenisSuratByKode('BAST');
             }
             // Simple number pattern if no structured format found
-            elseif (preg_match('/(\d+)/', $extractedText, $matches)) {
+            if (!$data['nomor_urut'] && preg_match('/(\d+)/', $normalizedText, $matches)) {
                 $data['nomor_urut'] = $matches[1];
             }
         }

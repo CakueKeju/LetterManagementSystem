@@ -6,11 +6,11 @@
         <div class="col-md-8">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4 class="mb-0">
+                    <h4 class="mb-0 flex-grow-1">
                         <i class="fas fa-edit me-2"></i>
                         Edit Jenis Surat: {{ $jenisSurat->nama_jenis }}
                     </h4>
-                    <a href="{{ route('admin.jenis-surat.index') }}" class="btn btn-secondary">
+                    <a href="{{ route('admin.jenis-surat.index') }}" class="btn btn-secondary ms-2">
                         <i class="fas fa-arrow-left me-1"></i>Kembali
                     </a>
                 </div>
@@ -83,9 +83,6 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save me-1"></i>Update Jenis Surat
                             </button>
-                            <a href="{{ route('admin.jenis-surat.index') }}" class="btn btn-secondary">
-                                <i class="fas fa-times me-1"></i>Batal
-                            </a>
                         </div>
                     </form>
                 </div>

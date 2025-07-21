@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             ['kode_divisi' => 'HR', 'nama_divisi' => 'Human Resources'],
             ['kode_divisi' => 'FIN', 'nama_divisi' => 'Finance'],
             ['kode_divisi' => 'MKT', 'nama_divisi' => 'Marketing'],
+            ['kode_divisi' => 'OPS', 'nama_divisi' => 'Operation'],
         ];
 
         foreach ($divisions as $division) {
@@ -34,6 +35,7 @@ class DatabaseSeeder extends Seeder
             ['kode_jenis' => 'SURK', 'nama_jenis' => 'Surat Keluar', 'is_active' => true],
             ['kode_jenis' => 'SURM', 'nama_jenis' => 'Surat Masuk', 'is_active' => true],
             ['kode_jenis' => 'MEMO', 'nama_jenis' => 'Memo', 'is_active' => true],
+            ['kode_jenis' => 'BAST', 'nama_jenis' => 'BERITA ACARA SERAH TERIMA', 'is_active' => true],
         ];
 
         foreach ($jenisSurat as $jenis) {
