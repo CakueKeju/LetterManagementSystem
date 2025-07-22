@@ -154,6 +154,11 @@ class SuratController extends Controller
     // Store the confirmed/corrected data
     public function store(Request $request)
     {
+        // Pastikan nomor urut selalu integer (misal input '001' jadi 1)
+        $request->merge([
+            'nomor_urut' => (int) ltrim($request->input('nomor_urut'), '0')
+        ]);
+
         $request->validate([
             'nomor_urut' => 'required|integer',
             'divisi_id' => 'required|exists:divisions,id',
@@ -164,12 +169,29 @@ class SuratController extends Controller
             'file_path' => 'required',
             'file_size' => 'required|integer',
             'mime_type' => 'required|string',
-            // 'kode_surat' => 'required|string', // Remove this validation, will be generated
         ]);
 
-        // Enforce unique nomor_urut per divisi
+        // Cek duplikasi nomor urut
         if (Surat::where('nomor_urut', $request->nomor_urut)->where('divisi_id', $request->divisi_id)->exists()) {
-            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada di divisi ini.'])->withInput();
+            // Ambil data untuk form konfirmasi
+            $divisions = \App\Models\Division::all();
+            $jenisSurat = \App\Models\JenisSurat::active()->get();
+            $input = $request->all();
+            $input['nomor_urut'] = $request->nomor_urut;
+            $input['divisi_id'] = $request->divisi_id;
+            $input['jenis_surat_id'] = $request->jenis_surat_id;
+            $input['deskripsi'] = $request->deskripsi;
+            $input['tanggal_surat'] = $request->tanggal_surat;
+            $input['tanggal_diterima'] = $request->tanggal_diterima;
+            $input['is_private'] = $request->has('is_private');
+            $file_path = $request->file_path;
+            $file_size = $request->file_size;
+            $mime_type = $request->mime_type;
+            $kode_surat = $request->kode_surat;
+            $extracted_text = $request->extracted_text ?? '';
+            $extraction_method = $request->extraction_method ?? '';
+            // Tampilkan warning di halaman konfirmasi
+            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada di divisi ini. Silakan pilih nomor lain.'])->withInput();
         }
 
         // Generate kode_surat
@@ -201,7 +223,7 @@ class SuratController extends Controller
             }
         }
 
-        return redirect()->route('surat.upload')->with('success', 'Surat uploaded successfully!');
+        return redirect()->route('home')->with('success', 'Surat berhasil diupload!');
     }
 
     // Get users for access selection
@@ -295,6 +317,9 @@ class SuratController extends Controller
             'is_private' => false,
         ];
 
+        if ($extractedText) {
+            \Log::info('Extracted text for surat:', ['text' => $extractedText]);
+        }
         // Try to extract nomor_urut and other data from extracted text
         if ($extractedText) {
             // Normalize text: remove double slashes, extra spaces
@@ -304,23 +329,20 @@ class SuratController extends Controller
             // Improved pattern: allow for optional double slashes and extra spaces
             if (preg_match('/Nomor:\s*(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
                 $data['nomor_urut'] = trim($matches[1]);
-                $data['divisi_id'] = $this->findDivisiByKode(trim($matches[2]));
-                $data['jenis_surat_id'] = $this->findJenisSuratByKode(trim($matches[3]));
+                $divisiId = $this->findDivisiByKode(trim($matches[2]));
+                $jenisId = $this->findJenisSuratByKode(trim($matches[3]));
+                $data['divisi_id'] = $divisiId ?: null;
+                $data['jenis_surat_id'] = $jenisId ?: null;
                 $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
             }
             // Alternative pattern: "Nomor: 123/ABC/DEF/INTENS/2023" (without "Nomor:")
             elseif (preg_match('/(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
                 $data['nomor_urut'] = trim($matches[1]);
-                $data['divisi_id'] = $this->findDivisiByKode(trim($matches[2]));
-                $data['jenis_surat_id'] = $this->findJenisSuratByKode(trim($matches[3]));
+                $divisiId = $this->findDivisiByKode(trim($matches[2]));
+                $jenisId = $this->findJenisSuratByKode(trim($matches[3]));
+                $data['divisi_id'] = $divisiId ?: null;
+                $data['jenis_surat_id'] = $jenisId ?: null;
                 $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
-            }
-            // Fuzzy fallback: look for 'OPS' and 'BAST' in the text if not found
-            if (!$data['divisi_id'] && stripos($normalizedText, 'OPS') !== false) {
-                $data['divisi_id'] = $this->findDivisiByKode('OPS');
-            }
-            if (!$data['jenis_surat_id'] && stripos($normalizedText, 'BAST') !== false) {
-                $data['jenis_surat_id'] = $this->findJenisSuratByKode('BAST');
             }
             // Simple number pattern if no structured format found
             if (!$data['nomor_urut'] && preg_match('/(\d+)/', $normalizedText, $matches)) {
@@ -343,11 +365,13 @@ class SuratController extends Controller
 
         // Try to match divisi and jenis_surat from text if not already found
         if (!$data['divisi_id'] && $extractedText) {
-            $data['divisi_id'] = $this->findDivisiFromText($extractedText);
+            $divisiId = $this->findDivisiFromText($extractedText);
+            $data['divisi_id'] = $divisiId ?: null;
         }
 
         if (!$data['jenis_surat_id'] && $extractedText) {
-            $data['jenis_surat_id'] = $this->findJenisSuratFromText($extractedText);
+            $jenisId = $this->findJenisSuratFromText($extractedText);
+            $data['jenis_surat_id'] = $jenisId ?: null;
         }
 
         return $data;
@@ -411,8 +435,9 @@ class SuratController extends Controller
     {
         $divisions = Division::all();
         foreach ($divisions as $division) {
-            if (stripos($text, $division->nama_divisi) !== false ||
-                stripos($text, $division->kode_divisi) !== false) {
+            // Match as whole word only
+            if (preg_match('/\\b' . preg_quote($division->nama_divisi, '/') . '\\b/i', $text) ||
+                preg_match('/\\b' . preg_quote($division->kode_divisi, '/') . '\\b/i', $text)) {
                 return $division->id;
             }
         }
@@ -424,11 +449,17 @@ class SuratController extends Controller
     {
         $jenisSurat = JenisSurat::active()->get();
         foreach ($jenisSurat as $jenis) {
-            if (stripos($text, $jenis->nama_jenis) !== false ||
-                stripos($text, $jenis->kode_jenis) !== false) {
+            // Match as whole word only
+            if (preg_match('/\\b' . preg_quote($jenis->nama_jenis, '/') . '\\b/i', $text)) {
+                \Log::info('Jenis surat match by nama_jenis', ['match' => $jenis->nama_jenis]);
+                return $jenis->id;
+            }
+            if (preg_match('/\\b' . preg_quote($jenis->kode_jenis, '/') . '\\b/i', $text)) {
+                \Log::info('Jenis surat match by kode_jenis', ['match' => $jenis->kode_jenis]);
                 return $jenis->id;
             }
         }
+        \Log::info('No jenis surat match found in text.');
         return null;
     }
 

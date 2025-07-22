@@ -65,7 +65,6 @@
                     <th>Jenis</th>
                     <th>Tanggal Surat</th>
                     <th>Uploader</th>
-                    <th>Private</th>
                     <th>Akses</th>
                     <th>File</th>
                     <th>Tanggal Upload</th>
@@ -85,18 +84,7 @@
                             @if($surat->is_private)
                                 <span class="badge bg-warning">Private</span>
                             @else
-                                <span class="badge bg-success">Public</span>
-                            @endif
-                        </td>
-                        <td>
-                            @if($surat->is_private)
-                                @if($surat->uploaded_by == Auth::id())
-                                    <span class="badge bg-primary">Owner</span>
-                                @else
-                                    <span class="badge bg-info">Granted</span>
-                                @endif
-                            @else
-                                <span class="badge bg-secondary">Divisi</span>
+                                <span class="badge bg-success">Publik</span>
                             @endif
                         </td>
                         <td><a href="{{ asset('storage/' . $surat->file_path) }}" target="_blank">Lihat</a></td>

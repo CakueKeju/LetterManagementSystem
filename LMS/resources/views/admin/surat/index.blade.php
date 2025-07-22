@@ -56,7 +56,7 @@
                             </div>
                             <div class="col-md-1">
                                 <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-search"></i>
+                                    <i class="fas fa-search"></i> Filter
                                 </button>
                             </div>
                         </div>
@@ -108,9 +108,6 @@
                                             <div class="btn-group" role="group">
                                                 <a href="{{ route('admin.surat.edit', $s->id) }}" class="btn btn-sm btn-primary" title="Edit">
                                                     <i class="fa-solid fa-pen"></i> Edit
-                                                </a>
-                                                <a href="{{ Storage::url($s->file_path) }}" target="_blank" class="btn btn-sm btn-info" title="Download">
-                                                    <i class="fas fa-download"></i>
                                                 </a>
                                                 <form method="POST" action="{{ route('admin.surat.destroy', $s->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus surat ini?')">
                                                     @csrf

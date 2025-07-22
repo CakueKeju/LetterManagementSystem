@@ -94,6 +94,16 @@
     </div>
     @endif
 
+    @if($errors->any())
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <form action="{{ route('surat.store') }}" method="POST">
         @csrf
         <input type="hidden" name="file_path" value="{{ $file_path }}">
@@ -145,7 +155,7 @@
                     <input type="date" class="form-control" id="tanggal_surat" name="tanggal_surat" value="{{ $input['tanggal_surat'] ?? '' }}" required>
                 </div>
                 <div class="mb-3">
-                    <label for="tanggal_diterima" class="form-label">Tanggal Upload</label>
+                    <label for="tanggal_diterima" class="form-label">Tanggal Upload (Otomatis)</label>
                     <input type="date" class="form-control" id="tanggal_diterima" name="tanggal_diterima" value="{{ $input['tanggal_diterima'] ?? '' }}" required>
                 </div>
                 <div class="mb-3">
