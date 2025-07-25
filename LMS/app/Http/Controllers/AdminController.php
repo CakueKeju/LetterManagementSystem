@@ -68,8 +68,8 @@ class AdminController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('kode_surat', 'like', "%{$search}%")
-                  ->orWhere('deskripsi', 'like', "%{$search}%")
+                $q->where('nomor_surat', 'like', "%{$search}%")
+                  ->orWhere('perihal', 'like', "%{$search}%")
                   ->orWhereHas('uploader', function($userQuery) use ($search) {
                       $userQuery->where('full_name', 'like', "%{$search}%");
                   });
@@ -115,36 +115,38 @@ class AdminController extends Controller
             'nomor_urut' => 'required|integer',
             'divisi_id' => 'required|exists:divisions,id',
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
-            'deskripsi' => 'required|string',
+            'perihal' => 'required|string',
             'tanggal_surat' => 'required|date',
             'tanggal_diterima' => 'required|date',
             'is_private' => 'boolean',
         ]);
 
-        // Check unique nomor_urut per divisi (excluding current surat)
+        // Check unique nomor_urut per divisi & jenis surat (excluding current surat)
         if (Surat::where('nomor_urut', $request->nomor_urut)
                 ->where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
                 ->where('id', '!=', $id)
                 ->exists()) {
-            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada di divisi ini.'])->withInput();
+            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini.'])->withInput();
         }
 
-        // Generate new kode_surat
+        // Generate new nomor_surat
         $division = Division::find($request->divisi_id);
         $jenisSurat = JenisSurat::find($request->jenis_surat_id);
-        $kodeSurat = sprintf('%s/%s/%s/INTENS/%s', 
-            $request->nomor_urut, 
-            $division->kode_divisi, 
-            $jenisSurat->kode_jenis, 
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $request->nomor_urut,
+            $division->kode_divisi,
+            $jenisSurat->kode_jenis,
+            date('m', strtotime($request->tanggal_surat)),
             date('Y', strtotime($request->tanggal_surat))
         );
 
         $surat->update([
             'nomor_urut' => $request->nomor_urut,
-            'kode_surat' => $kodeSurat,
+            'nomor_surat' => $nomorSurat,
             'divisi_id' => $request->divisi_id,
             'jenis_surat_id' => $request->jenis_surat_id,
-            'deskripsi' => $request->deskripsi,
+            'perihal' => $request->perihal,
             'tanggal_surat' => $request->tanggal_surat,
             'tanggal_diterima' => $request->tanggal_diterima,
             'is_private' => $request->has('is_private'),
@@ -154,7 +156,6 @@ class AdminController extends Controller
         if ($request->has('is_private') && $request->has('selected_users')) {
             // Remove existing access
             SuratAccess::where('surat_id', $surat->id)->delete();
-            
             // Add new access
             $selectedUsers = $request->selected_users;
             foreach ($selectedUsers as $userId) {
@@ -191,6 +192,168 @@ class AdminController extends Controller
         $surat->delete();
 
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil dihapus!');
+    }
+
+    /**
+     * Show upload form for admin (admin bisa pilih divisi)
+     */
+    public function showUploadForm()
+    {
+        $divisions = Division::all();
+        $jenisSurat = JenisSurat::all();
+        return view('admin.surat.upload', compact('divisions', 'jenisSurat'));
+    }
+
+    /**
+     * Handle file upload and text extraction (step 1: upload -> konfirmasi)
+     */
+    public function handleUpload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:pdf,doc,docx',
+        ]);
+        $file = $request->file('file');
+        $lettersDir = storage_path('app/private/letters');
+        if (!is_dir($lettersDir)) {
+            mkdir($lettersDir, 0777, true);
+        }
+        $path = $file->store('private/letters');
+        $fileSize = $file->getSize();
+        $mimeType = $file->getMimeType();
+        // Extract text (copy dari SuratController)
+        $extracted = '';
+        $ocrError = null;
+        $extractionMethod = '';
+        $fileExtension = strtolower($file->getClientOriginalExtension());
+        try {
+            switch ($fileExtension) {
+                case 'pdf':
+                    $extractionMethod = 'PDF Parser';
+                    $parser = new \Smalot\PdfParser\Parser();
+                    $pdf = $parser->parseFile($file->getRealPath());
+                    $extracted = $pdf->getText();
+                    break;
+                case 'doc':
+                case 'docx':
+                    $extractionMethod = 'Word Parser';
+                    $phpWord = \PhpOffice\PhpWord\IOFactory::load($file->getRealPath());
+                    $extracted = '';
+                    foreach ($phpWord->getSections() as $section) {
+                        foreach ($section->getElements() as $element) {
+                            if (method_exists($element, 'getText')) {
+                                $extracted .= $element->getText() . "\n";
+                            }
+                        }
+                    }
+                    break;
+                default:
+                    $ocrError = 'Format file tidak didukung untuk ekstraksi teks.';
+            }
+        } catch (\Exception $e) {
+            $ocrError = 'Error ekstraksi teks (' . $extractionMethod . '): ' . $e->getMessage();
+        }
+        // Prefill data kosong, admin pilih di konfirmasi
+        $prefilledData = [
+            'divisi_id' => null,
+            'jenis_surat_id' => null,
+            'perihal' => '',
+            'tanggal_surat' => date('Y-m-d'),
+            'tanggal_diterima' => date('Y-m-d'),
+            'is_private' => false,
+        ];
+        // Tidak perlu lock nomor urut di sini, baru di konfirmasi
+        return view('admin.surat.confirm', [
+            'file_path' => $path,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
+            'nomor_surat' => '',
+            'extracted_text' => $extracted,
+            'input' => $prefilledData,
+            'divisions' => Division::all(),
+            'jenisSurat' => JenisSurat::all(),
+            'ocr_error' => $ocrError,
+            'extraction_method' => $extractionMethod,
+        ]);
+    }
+
+    /**
+     * Konfirmasi dan simpan surat (step 2)
+     */
+    public function store(Request $request)
+    {
+        $request->merge([
+            'nomor_urut' => (int) ltrim($request->input('nomor_urut'), '0')
+        ]);
+        $request->validate([
+            'nomor_urut' => 'required|integer',
+            'divisi_id' => 'required|exists:divisions,id',
+            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+            'perihal' => 'required|string',
+            'tanggal_surat' => 'required|date',
+            'tanggal_diterima' => 'required|date',
+            'file_path' => 'required',
+            'file_size' => 'required|integer',
+            'mime_type' => 'required|string',
+        ]);
+        \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
+            ->where('jenis_surat_id', $request->jenis_surat_id)
+            ->where('nomor_urut', $request->nomor_urut)
+            ->where('user_id', \Auth::id())
+            ->delete();
+        if (\App\Models\Surat::where('nomor_urut', $request->nomor_urut)
+            ->where('divisi_id', $request->divisi_id)
+            ->where('jenis_surat_id', $request->jenis_surat_id)
+            ->exists()) {
+            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini. Silakan pilih nomor lain.'])->withInput();
+        }
+        $division = Division::find($request->divisi_id);
+        $jenisSurat = JenisSurat::find($request->jenis_surat_id);
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $request->nomor_urut,
+            $division->kode_divisi,
+            $jenisSurat->kode_jenis,
+            date('m', strtotime($request->tanggal_surat)),
+            date('Y', strtotime($request->tanggal_surat))
+        );
+        $filePath = $request->input('file_path');
+        $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $finalPdfPath = 'private/letters/final_' . uniqid() . '.pdf';
+        $outputPdfPath = storage_path('app/' . $finalPdfPath);
+        $pythonScript = base_path('python/fill_nomor_surat.py');
+        $cmd = escapeshellcmd("python3 $pythonScript '$filePath' '$outputPdfPath' '$nomorSurat'");
+        $output = [];
+        $return_var = 0;
+        try {
+            exec($cmd, $output, $return_var);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['file_path' => 'Server tidak mengizinkan eksekusi script Python. Hubungi admin.'])->withInput();
+        }
+        if ($return_var !== 0 || !file_exists($outputPdfPath)) {
+            return back()->withErrors(['file_path' => 'Gagal generate file PDF akhir.'])->withInput();
+        }
+        $mimeType = 'application/pdf';
+        $fileSize = filesize($outputPdfPath);
+        $surat = \App\Models\Surat::create([
+            'nomor_urut' => $request->input('nomor_urut'),
+            'nomor_surat' => $nomorSurat,
+            'divisi_id' => $request->input('divisi_id'),
+            'jenis_surat_id' => $request->input('jenis_surat_id'),
+            'perihal' => $request->input('perihal'),
+            'tanggal_surat' => $request->input('tanggal_surat'),
+            'tanggal_diterima' => $request->input('tanggal_diterima'),
+            'file_path' => $finalPdfPath,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
+            'is_private' => $request->input('is_private', false),
+            'uploaded_by' => \Auth::id(),
+        ]);
+        if ($request->input('is_private') && $request->has('selected_users')) {
+            $selectedUsers = $request->input('selected_users', []);
+            foreach ($selectedUsers as $userId) {
+                \App\Models\SuratAccess::grantAccess($surat->id, $userId);
+            }
+        }
+        return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload oleh admin!');
     }
 
     /**

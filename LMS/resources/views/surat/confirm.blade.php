@@ -109,7 +109,7 @@
         <input type="hidden" name="file_path" value="{{ $file_path }}">
         <input type="hidden" name="file_size" value="{{ $file_size }}">
         <input type="hidden" name="mime_type" value="{{ $mime_type }}">
-        <input type="hidden" name="kode_surat" value="{{ $kode_surat }}">
+        <input type="hidden" name="nomor_surat" value="{{ $nomor_surat }}">
         
         <div class="card">
             <div class="card-header">
@@ -117,38 +117,69 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <label for="kode_surat_display" class="form-label">Kode Surat (Otomatis)</label>
-                    <input type="text" class="form-control" id="kode_surat_display" value="{{ $kode_surat }}" readonly>
+                    <label class="form-label">Nomor Surat (Preview)</label>
+                    <div id="nomorSuratPreview" class="form-control bg-light" style="font-weight:bold;">
+                        {{ $nomor_surat ?: '.../.../.../INTENS/.../...' }}
+                    </div>
                 </div>
+                <input type="hidden" name="nomor_urut" id="nomor_urut_hidden" value="{{ $input['nomor_urut'] ?? '' }}">
+                <input type="hidden" name="nomor_surat" id="nomor_surat_hidden" value="{{ $nomor_surat ?: '.../.../.../INTENS/.../...' }}">
+                <script>
+                function updateNomorSuratPreview() {
+                    var divisiInput = document.getElementById('divisi_id');
+                    var jenisSelect = document.getElementById('jenis_surat_id');
+                    var tanggalSurat = document.getElementById('tanggal_surat').value;
+                    var divisiId = divisiInput.value;
+                    var kodeDivisi = divisiInput.getAttribute('data-kode') || '...';
+                    var jenisSuratId = jenisSelect.value;
+                    var kodeJenis = jenisSelect.selectedOptions[0] ? jenisSelect.selectedOptions[0].getAttribute('data-kode') : '...';
+                    var tgl = tanggalSurat ? new Date(tanggalSurat) : null;
+                    var bulan = tgl && !isNaN(tgl.getMonth()) ? (tgl.getMonth()+1).toString().padStart(2, '0') : '...';
+                    var tahun = tgl && !isNaN(tgl.getFullYear()) ? tgl.getFullYear() : '...';
+                    if (divisiId && jenisSuratId) {
+                        fetch(`/api/next-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                var nomorUrut = data.next_nomor_urut || '...';
+                                document.getElementById('nomor_urut_hidden').value = nomorUrut;
+                                var nomorSurat = `${String(nomorUrut).padStart(3, '0')}/${kodeDivisi}/${kodeJenis}/INTENS/${bulan}/${tahun}`;
+                                document.getElementById('nomorSuratPreview').textContent = nomorSurat;
+                                document.getElementById('nomor_surat_hidden').value = nomorSurat;
+                            });
+                    } else {
+                        var nomorUrut = '...';
+                        document.getElementById('nomor_urut_hidden').value = '';
+                        var nomorSurat = `${nomorUrut}/${kodeDivisi}/${kodeJenis}/INTENS/${bulan}/${tahun}`;
+                        document.getElementById('nomorSuratPreview').textContent = nomorSurat;
+                        document.getElementById('nomor_surat_hidden').value = nomorSurat;
+                    }
+                }
+                document.addEventListener('DOMContentLoaded', function() {
+                    document.getElementById('jenis_surat_id').addEventListener('change', updateNomorSuratPreview);
+                    document.getElementById('tanggal_surat').addEventListener('change', updateNomorSuratPreview);
+                    updateNomorSuratPreview();
+                });
+                </script>
+                <!-- Removed nomor urut input and script, nomor urut is now prefilled and hidden -->
                 <div class="mb-3">
-                    <label for="nomor_urut" class="form-label">Nomor Urut</label>
-                    <input type="number" class="form-control" id="nomor_urut" name="nomor_urut" value="{{ $input['nomor_urut'] ?? '' }}" required>
-                </div>
-                <div class="mb-3">
-                    <label for="divisi_id" class="form-label">Divisi</label>
-                    <select class="form-select" id="divisi_id" name="divisi_id" required>
-                        <option value="">Pilih Divisi</option>
-                        @foreach($divisions as $divisi)
-                            <option value="{{ $divisi->id }}" {{ ($input['divisi_id'] ?? '') == $divisi->id ? 'selected' : '' }}>
-                                {{ $divisi->nama_divisi }} ({{ $divisi->kode_divisi }})
-                            </option>
-                        @endforeach
-                    </select>
+                    <label class="form-label">Divisi</label>
+                    <div class="form-control bg-light" readonly>{{ Auth::user()->division->nama_divisi }} ({{ Auth::user()->division->kode_divisi }})</div>
+                    <input type="hidden" id="divisi_id" name="divisi_id" value="{{ Auth::user()->divisi_id }}" data-kode="{{ Auth::user()->division->kode_divisi }}">
                 </div>
                 <div class="mb-3">
                     <label for="jenis_surat_id" class="form-label">Jenis Surat</label>
                     <select class="form-select" id="jenis_surat_id" name="jenis_surat_id" required>
                         <option value="">Pilih Jenis Surat</option>
                         @foreach($jenisSurat as $jenis)
-                            <option value="{{ $jenis->id }}" {{ ($input['jenis_surat_id'] ?? '') == $jenis->id ? 'selected' : '' }}>
+                            <option value="{{ $jenis->id }}" {{ ($input['jenis_surat_id'] ?? '') == $jenis->id ? 'selected' : '' }} data-kode="{{ $jenis->kode_jenis }}">
                                 {{ $jenis->nama_jenis }} ({{ $jenis->kode_jenis }})
                             </option>
                         @endforeach
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label for="deskripsi" class="form-label">Deskripsi</label>
-                    <input type="text" class="form-control" id="deskripsi" name="deskripsi" value="{{ $input['deskripsi'] ?? '' }}" required>
+                    <label for="perihal" class="form-label">Perihal</label>
+                    <input type="text" class="form-control" id="perihal" name="perihal" value="{{ $input['perihal'] ?? '' }}" required>
                 </div>
                 <div class="mb-3">
                     <label for="tanggal_surat" class="form-label">Tanggal Surat</label>
@@ -203,8 +234,39 @@
             </div>
         </div>
         
-        <button type="submit" class="btn btn-success mt-3">Simpan Surat</button>
+        <button type="submit" class="btn btn-primary">Konfirmasi</button>
+        <button type="button" class="btn btn-secondary" onclick="previewSurat()">Preview PDF</button>
     </form>
+    <form id="previewForm" action="{{ route('surat.preview') }}" method="POST" target="_blank" style="display:none;">
+        @csrf
+        <input type="hidden" name="file_path" id="preview_file_path" value="{{ $file_path }}">
+        <input type="hidden" name="nomor_urut" id="preview_nomor_urut" value="">
+        <input type="hidden" name="divisi_id" id="preview_divisi_id" value="">
+        <input type="hidden" name="jenis_surat_id" id="preview_jenis_surat_id" value="">
+        <input type="hidden" name="tanggal_surat" id="preview_tanggal_surat" value="">
+    </form>
+    <script>
+    function previewSurat() {
+        // Ambil value dari input utama (hidden atau visible)
+        var nomorUrut = document.getElementById('nomor_urut_hidden') ? document.getElementById('nomor_urut_hidden').value : '';
+        var divisiId = document.getElementById('divisi_id') ? document.getElementById('divisi_id').value : '';
+        var jenisSuratId = document.getElementById('jenis_surat_id') ? document.getElementById('jenis_surat_id').value : '';
+        var tanggalSurat = document.getElementById('tanggal_surat') ? document.getElementById('tanggal_surat').value : '';
+        var filePath = document.querySelector('input[name="file_path"]').value;
+        // Isi input hidden di form preview
+        document.getElementById('preview_nomor_urut').value = nomorUrut;
+        document.getElementById('preview_divisi_id').value = divisiId;
+        document.getElementById('preview_jenis_surat_id').value = jenisSuratId;
+        document.getElementById('preview_tanggal_surat').value = tanggalSurat;
+        document.getElementById('preview_file_path').value = filePath;
+        // Validasi minimal
+        if (!nomorUrut || !divisiId || !jenisSuratId || !tanggalSurat || !filePath) {
+            alert('Data belum lengkap untuk preview. Pastikan semua field terisi.');
+            return;
+        }
+        document.getElementById('previewForm').submit();
+    }
+    </script>
 </div>
 
 <script>

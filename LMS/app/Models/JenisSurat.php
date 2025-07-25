@@ -12,6 +12,7 @@ class JenisSurat extends Model
     protected $table = 'jenis_surat';
 
     protected $fillable = [
+        'divisi_id',
         'kode_jenis',
         'nama_jenis',
         'deskripsi',
@@ -28,6 +29,11 @@ class JenisSurat extends Model
     public function surat()
     {
         return $this->hasMany(Surat::class, 'jenis_surat_id');
+    }
+
+    public function division()
+    {
+        return $this->belongsTo(Division::class, 'divisi_id');
     }
 
     // Scopes

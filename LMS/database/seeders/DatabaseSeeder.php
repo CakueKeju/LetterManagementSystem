@@ -8,6 +8,7 @@ use App\Models\JenisSurat;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
@@ -16,30 +17,39 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create default divisions
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        \App\Models\JenisSurat::truncate();
+        \App\Models\Division::truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
         $divisions = [
-            ['kode_divisi' => 'IT', 'nama_divisi' => 'Information Technology'],
-            ['kode_divisi' => 'HR', 'nama_divisi' => 'Human Resources'],
-            ['kode_divisi' => 'FIN', 'nama_divisi' => 'Finance'],
-            ['kode_divisi' => 'MKT', 'nama_divisi' => 'Marketing'],
-            ['kode_divisi' => 'OPS', 'nama_divisi' => 'Operation'],
+            ['kode_divisi' => 'OPS', 'nama_divisi' => 'Operasional'],
+            ['kode_divisi' => 'HRD', 'nama_divisi' => 'HRD'],
+            ['kode_divisi' => 'KEU', 'nama_divisi' => 'Keuangan'],
         ];
-
-        foreach ($divisions as $division) {
-            Division::create($division);
-        }
-
-        // Create default jenis surat
-        $jenisSurat = [
-            ['kode_jenis' => 'SUR', 'nama_jenis' => 'Surat Biasa', 'is_active' => true],
-            ['kode_jenis' => 'SURK', 'nama_jenis' => 'Surat Keluar', 'is_active' => true],
-            ['kode_jenis' => 'SURM', 'nama_jenis' => 'Surat Masuk', 'is_active' => true],
-            ['kode_jenis' => 'MEMO', 'nama_jenis' => 'Memo', 'is_active' => true],
-            ['kode_jenis' => 'BAST', 'nama_jenis' => 'BERITA ACARA SERAH TERIMA', 'is_active' => true],
-        ];
-
-        foreach ($jenisSurat as $jenis) {
-            JenisSurat::create($jenis);
+        foreach ($divisions as $div) {
+            $division = \App\Models\Division::create($div);
+            \App\Models\JenisSurat::create([
+                'divisi_id' => $division->id,
+                'kode_jenis' => 'JENIS1',
+                'nama_jenis' => 'Jenis Surat 1',
+                'deskripsi' => 'Jenis surat 1 untuk ' . $division->nama_divisi,
+                'is_active' => true,
+            ]);
+            \App\Models\JenisSurat::create([
+                'divisi_id' => $division->id,
+                'kode_jenis' => 'JENIS2',
+                'nama_jenis' => 'Jenis Surat 2',
+                'deskripsi' => 'Jenis surat 2 untuk ' . $division->nama_divisi,
+                'is_active' => true,
+            ]);
+            \App\Models\JenisSurat::create([
+                'divisi_id' => $division->id,
+                'kode_jenis' => 'JENIS3',
+                'nama_jenis' => 'Jenis Surat 3',
+                'deskripsi' => 'Jenis surat 3 untuk ' . $division->nama_divisi,
+                'is_active' => true,
+            ]);
         }
 
         // Create admin user

@@ -2,7 +2,7 @@
 
 @section('content')
 <div class="container">
-    <h2>Upload Surat</h2>
+    <h2>Upload Surat (Admin)</h2>
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
@@ -15,7 +15,7 @@
             </ul>
         </div>
     @endif
-    <form action="{{ route('surat.handleUpload') }}" method="POST" enctype="multipart/form-data">
+    <form action="{{ route('admin.surat.handleUpload') }}" method="POST" enctype="multipart/form-data">
         @csrf
         <div class="mb-3">
             <label for="file" class="form-label">Surat File (PDF, DOC, DOCX)</label>

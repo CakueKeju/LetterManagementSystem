@@ -32,9 +32,9 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="kode_surat" class="form-label">Kode Surat (Otomatis)</label>
-                                    <input type="text" class="form-control" id="kode_surat" value="{{ $surat->kode_surat }}" readonly>
-                                    <small class="text-muted">Kode surat akan di-generate otomatis berdasarkan nomor urut, divisi, dan jenis surat</small>
+                                    <label for="nomor_surat" class="form-label">Nomor Surat (Otomatis)</label>
+                                    <input type="text" class="form-control" id="nomor_surat" value="{{ $surat->nomor_surat }}" readonly>
+                                    <small class="text-muted">Nomor surat akan di-generate otomatis berdasarkan nomor urut, divisi, dan jenis surat</small>
                                 </div>
                             </div>
                         </div>
@@ -75,9 +75,9 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="deskripsi" class="form-label">Deskripsi *</label>
-                            <textarea class="form-control @error('deskripsi') is-invalid @enderror" id="deskripsi" name="deskripsi" rows="3" required>{{ old('deskripsi', $surat->deskripsi) }}</textarea>
-                            @error('deskripsi')
+                            <label for="perihal" class="form-label">Perihal *</label>
+                            <textarea class="form-control @error('perihal') is-invalid @enderror" id="perihal" name="perihal" rows="3" required>{{ old('perihal', $surat->perihal) }}</textarea>
+                            @error('perihal')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>

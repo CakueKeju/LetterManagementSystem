@@ -18,6 +18,7 @@ Route::post('/surat/upload', [SuratController::class, 'handleUpload'])->name('su
 Route::get('/surat/confirm', [SuratController::class, 'showConfirmForm'])->name('surat.confirm');
 Route::post('/surat/store', [SuratController::class, 'store'])->name('surat.store');
 Route::get('/surat/users-for-access', [SuratController::class, 'getUsersForAccess'])->name('surat.getUsersForAccess');
+Route::post('/surat/preview', [App\Http\Controllers\SuratController::class, 'preview'])->name('surat.preview');
 
 // Admin Routes
 Route::prefix('admin')->name('admin.')->group(function () {
@@ -52,4 +53,27 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/jenis-surat/{id}/edit', [AdminController::class, 'jenisSuratEdit'])->name('jenis-surat.edit');
     Route::put('/jenis-surat/{id}', [AdminController::class, 'jenisSuratUpdate'])->name('jenis-surat.update');
     Route::delete('/jenis-surat/{id}', [AdminController::class, 'jenisSuratDestroy'])->name('jenis-surat.destroy');
+});
+
+Route::middleware(['auth', 'admin'])->group(function() {
+    Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'showUploadForm'])->name('admin.surat.upload');
+    Route::post('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'handleUpload'])->name('admin.surat.handleUpload');
+});
+
+Route::get('/api/next-nomor-urut', function (\Illuminate\Http\Request $request) {
+    $divisiId = $request->query('divisi_id');
+    $jenisSuratId = $request->query('jenis_surat_id');
+    $existingNumbers = \App\Models\Surat::where('divisi_id', $divisiId)
+        ->where('jenis_surat_id', $jenisSuratId)
+        ->pluck('nomor_urut')
+        ->sort()
+        ->values();
+    $nextNomorUrut = 1;
+    foreach ($existingNumbers as $existingNumber) {
+        if ($existingNumber > $nextNomorUrut) {
+            break;
+        }
+        $nextNomorUrut = $existingNumber + 1;
+    }
+    return response()->json(['next_nomor_urut' => $nextNomorUrut]);
 });

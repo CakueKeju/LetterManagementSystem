@@ -66,6 +66,9 @@ class HomeController extends Controller
         if ($request->filled('is_private')) {
             $query->where('is_private', $request->is_private);
         }
+        if ($request->filled('perihal')) {
+            $query->where('perihal', 'like', '%' . $request->perihal . '%');
+        }
 
         // Sorting
         $sort = $request->get('sort', 'newest');
@@ -77,12 +80,17 @@ class HomeController extends Controller
 
         $letters = $query->paginate(15);
 
-        // Calculate next available nomor urut for the user's division
+        // Calculate next available nomor urut for the user's division and selected jenis surat
         $userDivisionId = $user->divisi_id;
+        $jenisSuratId = $request->get('jenis_surat_id');
+        $existingNumbers = collect();
+        if ($jenisSuratId) {
         $existingNumbers = Surat::where('divisi_id', $userDivisionId)
+                ->where('jenis_surat_id', $jenisSuratId)
             ->pluck('nomor_urut')
             ->sort()
             ->values();
+        }
         $nextNomorUrut = 1;
         foreach ($existingNumbers as $existingNumber) {
             if ($existingNumber > $nextNomorUrut) {
@@ -91,11 +99,12 @@ class HomeController extends Controller
             $nextNomorUrut = $existingNumber + 1;
         }
 
+        $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->active()->get();
         return view('home', [
             'letters' => $letters,
             'filters' => $request->only(['divisi_id', 'jenis_surat_id', 'tanggal_surat', 'is_private', 'sort']),
             'divisions' => Division::all(),
-            'jenisSurat' => JenisSurat::active()->get(),
+            'jenisSurat' => $jenisSurat,
             'available_nomor_urut' => $nextNomorUrut,
         ]);
     }

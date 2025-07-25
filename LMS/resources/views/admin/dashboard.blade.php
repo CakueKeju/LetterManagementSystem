@@ -10,8 +10,8 @@
                         <i class="fas fa-tachometer-alt me-2"></i>
                         Admin Dashboard
                     </h4>
-                    <a href="{{ route('home') }}" class="btn btn-outline-primary ms-3">
-                        <i class="fas fa-user"></i> Lihat Dashboard User
+                    <a href="{{ route('admin.surat.upload') }}" class="btn btn-success ms-2">
+                        <i class="fas fa-plus"></i> Upload Surat
                     </a>
                 </div>
                 <div class="card-body">
@@ -103,7 +103,7 @@
                                             <table class="table table-sm">
                                                 <thead>
                                                     <tr>
-                                                        <th>Kode Surat</th>
+                                                        <th>Nomor Surat</th>
                                                         <th>Deskripsi</th>
                                                         <th>Uploader</th>
                                                         <th>Divisi</th>
@@ -116,10 +116,10 @@
                                                     <tr>
                                                         <td>
                                                             <a href="{{ route('admin.surat.edit', $surat->id) }}" class="text-decoration-none">
-                                                                {{ $surat->kode_surat }}
+                                                                {{ $surat->nomor_surat }}
                                                             </a>
                                                         </td>
-                                                        <td>{{ Str::limit($surat->deskripsi, 30) }}</td>
+                                                        <td>{{ Str::limit($surat->perihal, 30) }}</td>
                                                         <td>{{ $surat->uploader->full_name ?? 'N/A' }}</td>
                                                         <td>{{ $surat->division->nama_divisi ?? 'N/A' }}</td>
                                                         <td>

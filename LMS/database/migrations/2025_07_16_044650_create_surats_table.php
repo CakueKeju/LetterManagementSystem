@@ -11,10 +11,10 @@ return new class extends Migration
         Schema::create('surat', function (Blueprint $table) {
             $table->id();
             $table->integer('nomor_urut');
-            $table->string('kode_surat', 50)->unique();
+            $table->string('nomor_surat', 50)->unique();
             $table->foreignId('divisi_id')->constrained('divisions');
             $table->foreignId('jenis_surat_id')->constrained('jenis_surat');
-            $table->string('deskripsi', 255);
+            $table->string('perihal', 255);
             $table->date('tanggal_surat');
             $table->date('tanggal_diterima');
             $table->string('file_path', 500);

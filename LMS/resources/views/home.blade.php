@@ -2,30 +2,15 @@
 
 @section('content')
 <div class="container">
-    <h2 class="mb-4">Daftar Surat</h2>
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <div class="alert alert-info mb-0" style="max-width: 350px;">
-                <strong>Nomor Urut Tersedia:</strong> <span class="badge bg-primary">{{ $available_nomor_urut }}</span>
-            </div>
-        </div>
+        <h2 class="mb-0">Daftar Surat</h2>
         <a href="{{ route('surat.upload') }}" class="btn btn-success">
             <i class="fas fa-plus me-2"></i>Upload Surat
         </a>
     </div>
-    <form method="GET" action="{{ route('home') }}" class="row g-3 mb-4">
+    <form method="GET" action="{{ route('home') }}" class="row g-3 mb-4" id="filterForm">
         <div class="col-md-2">
-            <select name="divisi_id" class="form-select">
-                <option value="">Semua Divisi</option>
-                @foreach($divisions as $divisi)
-                    <option value="{{ $divisi->id }}" {{ ($filters['divisi_id'] ?? '') == $divisi->id ? 'selected' : '' }}>
-                        {{ $divisi->nama_divisi }}
-                    </option>
-                @endforeach
-            </select>
-        </div>
-        <div class="col-md-2">
-            <select name="jenis_surat_id" class="form-select">
+            <select name="jenis_surat_id" class="form-select" id="jenisSuratSelect">
                 <option value="">Semua Jenis</option>
                 @foreach($jenisSurat as $jenis)
                     <option value="{{ $jenis->id }}" {{ ($filters['jenis_surat_id'] ?? '') == $jenis->id ? 'selected' : '' }}>
@@ -45,6 +30,9 @@
             </select>
                 </div>
         <div class="col-md-2">
+            <input type="text" name="perihal" class="form-control" placeholder="Cari Perihal" value="{{ $filters['perihal'] ?? '' }}">
+        </div>
+        <div class="col-md-2">
             <select name="sort" class="form-select">
                 <option value="newest" {{ ($filters['sort'] ?? '') === 'newest' ? 'selected' : '' }}>Terbaru</option>
                 <option value="oldest" {{ ($filters['sort'] ?? '') === 'oldest' ? 'selected' : '' }}>Terlama</option>
@@ -54,13 +42,18 @@
             <button type="submit" class="btn btn-primary w-100">Filter</button>
         </div>
     </form>
+    <script>
+    document.getElementById('jenisSuratSelect').addEventListener('change', function() {
+        document.getElementById('filterForm').submit();
+    });
+    </script>
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
             <thead>
                 <tr>
                     <th>No</th>
-                    <th>Kode Surat</th>
-                    <th>Deskripsi</th>
+                    <th>Nomor Surat</th>
+                    <th>Perihal</th>
                     <th>Divisi</th>
                     <th>Jenis</th>
                     <th>Tanggal Surat</th>
@@ -74,8 +67,8 @@
                 @forelse($letters as $i => $surat)
                     <tr>
                         <td>{{ $letters->firstItem() + $i }}</td>
-                        <td>{{ $surat->kode_surat }}</td>
-                        <td>{{ $surat->deskripsi }}</td>
+                        <td>{{ $surat->nomor_surat }}</td>
+                        <td>{{ $surat->perihal }}</td>
                         <td>{{ $surat->division->nama_divisi }}</td>
                         <td>{{ $surat->jenisSurat->nama_jenis }}</td>
                         <td>{{ $surat->tanggal_surat->format('d-m-Y') }}</td>

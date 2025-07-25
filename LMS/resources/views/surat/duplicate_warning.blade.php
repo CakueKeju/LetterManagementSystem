@@ -63,6 +63,9 @@
                             </select>
                         </div>
                         <button type="submit" class="btn btn-success">Lanjutkan dengan Nomor Ini</button>
+                        <input type="hidden" name="file_path" value="{{ $file_path ?? '' }}">
+                        <input type="hidden" name="file_size" value="{{ $file_size ?? '' }}">
+                        <input type="hidden" name="mime_type" value="{{ $mime_type ?? '' }}">
                     </form>
                 </div>
             </div>

@@ -27,6 +27,11 @@ class Division extends Model
         return $this->hasMany(Surat::class, 'divisi_id');
     }
 
+    public function jenisSurat()
+    {
+        return $this->hasMany(JenisSurat::class, 'divisi_id');
+    }
+
     // Scopes
     public function scopeActive($query)
     {

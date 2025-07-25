@@ -48,8 +48,8 @@
         <thead>
             <tr>
                 <th>No</th>
-                <th>Kode Surat</th>
-                <th>Deskripsi</th>
+                <th>Nomor Surat</th>
+                <th>Perihal</th>
                 <th>Divisi</th>
                 <th>Jenis</th>
                 <th>Tanggal Surat</th>
@@ -63,8 +63,8 @@
             @forelse($letters as $i => $surat)
                 <tr>
                     <td>{{ $letters->firstItem() + $i }}</td>
-                    <td>{{ $surat->kode_surat }}</td>
-                    <td>{{ $surat->deskripsi }}</td>
+                    <td>{{ $surat->nomor_surat }}</td>
+                    <td>{{ $surat->perihal }}</td>
                     <td>{{ $surat->division->nama_divisi }}</td>
                     <td>{{ $surat->jenisSurat->nama_jenis }}</td>
                     <td>{{ $surat->tanggal_surat->format('d-m-Y') }}</td>

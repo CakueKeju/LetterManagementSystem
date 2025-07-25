@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\DB;
 use thiagoalessio\TesseractOCR\TesseractOCR;
 use Smalot\PdfParser\Parser;
 use PhpOffice\PhpWord\IOFactory;
+use App\Models\NomorUrutLock;
+use PhpOffice\PhpWord\TemplateProcessor;
+use setasign\Fpdi\Fpdi;
 
 class SuratController extends Controller
 {
@@ -19,7 +22,7 @@ class SuratController extends Controller
     public function showUploadForm()
     {
         $divisions = Division::all();
-        $jenisSurat = JenisSurat::active()->get();
+        $jenisSurat = JenisSurat::where('divisi_id', Auth::user()->divisi_id)->active()->get();
         return view('surat.upload', compact('divisions', 'jenisSurat'));
     }
 
@@ -27,11 +30,20 @@ class SuratController extends Controller
     public function handleUpload(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png',
+            'file' => 'required|file|mimes:pdf,doc,docx',
         ]);
 
         $file = $request->file('file');
-        $path = $file->store('letters');
+        // Pastikan folder private/letters ada
+        $lettersDir = storage_path('app/private/letters');
+        if (!is_dir($lettersDir)) {
+            if (!mkdir($lettersDir, 0777, true) && !is_dir($lettersDir)) {
+                \Log::error('Gagal membuat folder: ' . $lettersDir);
+                return back()->withErrors(['file_path' => 'Gagal membuat folder penyimpanan surat. Hubungi admin.']);
+            }
+        }
+        $path = $file->store('private/letters');
+        \Log::info('File uploaded to: ' . $path . ' | Exists: ' . (Storage::exists($path) ? 'yes' : 'no'));
         $fileSize = $file->getSize();
         $mimeType = $file->getMimeType();
 
@@ -65,21 +77,6 @@ class SuratController extends Controller
                     }
                     break;
                     
-                case 'jpg':
-                case 'jpeg':
-                case 'png':
-                    $extractionMethod = 'OCR (Tesseract)';
-                    // Check if Tesseract is available
-                    $tesseractPath = exec('which tesseract');
-                    if (empty($tesseractPath)) {
-                        $ocrError = 'Tesseract OCR tidak ditemukan. Pastikan Tesseract terinstall di sistem.';
-                    } else {
-                        $ocr = new TesseractOCR($file->getRealPath());
-                        $ocr->executable($tesseractPath);
-                        $extracted = $ocr->run();
-                    }
-                    break;
-                    
                 default:
                     $ocrError = 'Format file tidak didukung untuk ekstraksi teks.';
             }
@@ -101,22 +98,44 @@ class SuratController extends Controller
         // Extract and pre-fill form data from file/extracted text
         $prefilledData = $this->extractFormData($file, $extracted);
 
-        // Check for duplicate nomor_urut if we have divisi_id and nomor_urut
-        if ($prefilledData['nomor_urut'] && $prefilledData['divisi_id']) {
-            $duplicateCheck = $this->checkDuplicate($prefilledData['nomor_urut'], $prefilledData['divisi_id']);
-            if ($duplicateCheck['is_duplicate']) {
-                // Delete the uploaded file since it's a duplicate
-                Storage::delete($path);
+        // Ambil nomor urut berikutnya (skip locked)
+        $divisiId = Auth::user()->divisi_id;
+        $jenisSuratId = $request->input('jenis_surat_id') ?? null;
+        $nextNomorUrut = null;
+        if ($divisiId && $jenisSuratId) {
+            $nextNomorUrut = $this->getNextNomorUrut($divisiId, $jenisSuratId);
+            if ($nextNomorUrut) {
+                // Lock nomor urut untuk user ini selama 10 menit
+                NomorUrutLock::updateOrCreate([
+                    'divisi_id' => $divisiId,
+                    'jenis_surat_id' => $jenisSuratId,
+                    'nomor_urut' => $nextNomorUrut,
+                ], [
+                    'user_id' => Auth::id(),
+                    'locked_until' => now()->addMinutes(10),
+                ]);
+            }
+        }
+        $prefilledData['nomor_urut'] = $nextNomorUrut;
 
+        // Check for duplicate nomor_urut if we have divisi_id, jenis_surat_id, and nomor_urut
+        if ($prefilledData['nomor_urut'] && $prefilledData['divisi_id'] && $prefilledData['jenis_surat_id']) {
+            $duplicateCheck = $this->checkDuplicate($prefilledData['nomor_urut'], $prefilledData['divisi_id'], $prefilledData['jenis_surat_id']);
+            if ($duplicateCheck['is_duplicate']) {
+                // Jangan hapus file, biarkan user tetap bisa preview/konfirmasi
                 return view('surat.duplicate_warning', [
                     'extracted_nomor_urut' => $prefilledData['nomor_urut'],
                     'extracted_divisi_id' => $prefilledData['divisi_id'],
+                    'extracted_jenis_surat_id' => $prefilledData['jenis_surat_id'],
                     'available_numbers' => $duplicateCheck['available_numbers'],
                     'divisions' => Division::all(),
                     'jenisSurat' => JenisSurat::active()->get(),
                     'extracted_text' => $extracted,
                     'ocr_error' => $ocrError,
                     'extraction_method' => $extractionMethod,
+                    'file_path' => $path,
+                    'file_size' => $fileSize,
+                    'mime_type' => $mimeType,
                 ]);
             }
         }
@@ -126,11 +145,11 @@ class SuratController extends Controller
             'file_path' => $path,
             'file_size' => $fileSize,
             'mime_type' => $mimeType,
-            'kode_surat' => $prefilledData['kode_surat'] ?? '',
+            'nomor_surat' => $prefilledData['nomor_surat'] ?? '',
             'extracted_text' => $extracted,
             'input' => $prefilledData,
             'divisions' => Division::all(),
-            'jenisSurat' => JenisSurat::active()->get(),
+            'jenisSurat' => JenisSurat::where('divisi_id', Auth::user()->divisi_id)->active()->get(),
             'ocr_error' => $ocrError,
             'extraction_method' => $extractionMethod,
         ]);
@@ -139,15 +158,16 @@ class SuratController extends Controller
     // Show confirmation form for user to verify/correct code
     public function showConfirmForm(Request $request)
     {
+        $jenisSurat = JenisSurat::where('divisi_id', Auth::user()->divisi_id)->active()->get();
         return view('surat.confirm', [
             'file_path' => $request->input('file_path'),
             'file_size' => $request->input('file_size'),
             'mime_type' => $request->input('mime_type'),
-            'kode_surat' => $request->input('kode_surat'),
+            'nomor_surat' => $request->input('nomor_surat'),
             'extracted_text' => $request->input('extracted_text'),
             'input' => $request->all(),
             'divisions' => Division::all(),
-            'jenisSurat' => JenisSurat::active()->get(),
+            'jenisSurat' => $jenisSurat,
         ]);
     }
 
@@ -163,7 +183,7 @@ class SuratController extends Controller
             'nomor_urut' => 'required|integer',
             'divisi_id' => 'required|exists:divisions,id',
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
-            'deskripsi' => 'required|string',
+            'perihal' => 'required|string', // was 'deskripsi'
             'tanggal_surat' => 'required|date',
             'tanggal_diterima' => 'required|date',
             'file_path' => 'required',
@@ -171,8 +191,18 @@ class SuratController extends Controller
             'mime_type' => 'required|string',
         ]);
 
+        // Hapus lock nomor urut user ini (jika ada)
+        NomorUrutLock::where('divisi_id', $request->divisi_id)
+            ->where('jenis_surat_id', $request->jenis_surat_id)
+            ->where('nomor_urut', $request->nomor_urut)
+            ->where('user_id', Auth::id())
+            ->delete();
+
         // Cek duplikasi nomor urut
-        if (Surat::where('nomor_urut', $request->nomor_urut)->where('divisi_id', $request->divisi_id)->exists()) {
+        if (Surat::where('nomor_urut', $request->nomor_urut)
+            ->where('divisi_id', $request->divisi_id)
+            ->where('jenis_surat_id', $request->jenis_surat_id)
+            ->exists()) {
             // Ambil data untuk form konfirmasi
             $divisions = \App\Models\Division::all();
             $jenisSurat = \App\Models\JenisSurat::active()->get();
@@ -180,37 +210,65 @@ class SuratController extends Controller
             $input['nomor_urut'] = $request->nomor_urut;
             $input['divisi_id'] = $request->divisi_id;
             $input['jenis_surat_id'] = $request->jenis_surat_id;
-            $input['deskripsi'] = $request->deskripsi;
+            $input['perihal'] = $request->perihal; // was 'deskripsi'
             $input['tanggal_surat'] = $request->tanggal_surat;
             $input['tanggal_diterima'] = $request->tanggal_diterima;
             $input['is_private'] = $request->has('is_private');
             $file_path = $request->file_path;
             $file_size = $request->file_size;
             $mime_type = $request->mime_type;
-            $kode_surat = $request->kode_surat;
+            $nomor_surat = $request->nomor_surat;
             $extracted_text = $request->extracted_text ?? '';
             $extraction_method = $request->extraction_method ?? '';
             // Tampilkan warning di halaman konfirmasi
-            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada di divisi ini. Silakan pilih nomor lain.'])->withInput();
+            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini. Silakan pilih nomor lain.'])->withInput();
         }
 
         // Generate kode_surat
         $division = Division::find($request->divisi_id);
         $jenisSurat = JenisSurat::find($request->jenis_surat_id);
-        $kodeSurat = sprintf('%s/%s/%s/INTENS/%s', $request->nomor_urut, $division->kode_divisi, $jenisSurat->kode_jenis, date('Y'));
+        $nomorSurat = sprintf('%s/%s/%s/INTENS/%s', $request->nomor_urut, $division->kode_divisi, $jenisSurat->kode_jenis, date('Y'));
+
+        $filePath = $request->input('file_path');
+        $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $request->nomor_urut,
+            Division::find($request->divisi_id)->kode_divisi,
+            JenisSurat::find($request->jenis_surat_id)->kode_jenis,
+            date('m', strtotime($request->tanggal_surat)),
+            date('Y', strtotime($request->tanggal_surat))
+        );
+        $finalPdfPath = 'private/letters/final_' . uniqid() . '.pdf';
+        $outputPdfPath = storage_path('app/' . $finalPdfPath);
+        $pythonScript = base_path('python/fill_nomor_surat.py');
+        $cmd = escapeshellcmd("python3 $pythonScript '$filePath' '$outputPdfPath' '$nomorSurat'");
+        $output = [];
+        $return_var = 0;
+        try {
+            exec($cmd, $output, $return_var);
+        } catch (\Throwable $e) {
+            // If exec is not allowed, fallback (commented out)
+            // return back()->withErrors(['file_path' => 'Server tidak mengizinkan eksekusi script Python. Hubungi admin.'])->withInput();
+            return back()->withErrors(['file_path' => 'Server tidak mengizinkan eksekusi script Python. Hubungi admin.'])->withInput();
+        }
+        if ($return_var !== 0 || !file_exists($outputPdfPath)) {
+            return back()->withErrors(['file_path' => 'Gagal generate file PDF akhir.'])->withInput();
+        }
+        $mimeType = 'application/pdf';
+        $fileSize = filesize($outputPdfPath);
 
         // Create the surat
         $surat = Surat::create([
             'nomor_urut' => $request->input('nomor_urut'),
-            'kode_surat' => $kodeSurat,
+            'nomor_surat' => $nomorSurat, // was 'kode_surat'
             'divisi_id' => $request->input('divisi_id'),
             'jenis_surat_id' => $request->input('jenis_surat_id'),
-            'deskripsi' => $request->input('deskripsi'),
+            'perihal' => $request->input('perihal'), // was 'deskripsi'
             'tanggal_surat' => $request->input('tanggal_surat'),
             'tanggal_diterima' => $request->input('tanggal_diterima'),
-            'file_path' => $request->input('file_path'),
-            'file_size' => $request->input('file_size'),
-            'mime_type' => $request->input('mime_type'),
+            'file_path' => $finalPdfPath,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
             'is_private' => $request->input('is_private', false),
             'uploaded_by' => Auth::id(),
         ]);
@@ -311,7 +369,7 @@ class SuratController extends Controller
             'nomor_urut' => null,
             'divisi_id' => null,
             'jenis_surat_id' => null,
-            'deskripsi' => '', // Always empty as requested
+            'perihal' => '', // was 'deskripsi'
             'tanggal_surat' => date('Y-m-d'),
             'tanggal_diterima' => date('Y-m-d'), // Default to today
             'is_private' => false,
@@ -463,40 +521,100 @@ class SuratController extends Controller
         return null;
     }
 
-    // Check for duplicate nomor_urut and get available numbers
-    private function checkDuplicate($nomorUrut, $divisiId)
+    // Helper: Check for duplicate nomor_urut and get available numbers (per divisi & jenis surat)
+    private function checkDuplicate($nomorUrut, $divisiId, $jenisSuratId)
     {
         $isDuplicate = Surat::where('nomor_urut', $nomorUrut)
-                           ->where('divisi_id', $divisiId)
-                           ->exists();
+            ->where('divisi_id', $divisiId)
+            ->where('jenis_surat_id', $jenisSuratId)
+            ->exists();
 
-        // Get available numbers for this division (next 5 available numbers)
         $existingNumbers = Surat::where('divisi_id', $divisiId)
-                               ->pluck('nomor_urut')
-                               ->sort()
-                               ->values();
+            ->where('jenis_surat_id', $jenisSuratId)
+            ->pluck('nomor_urut')
+            ->sort()
+            ->values();
 
         $availableNumbers = [];
         $nextNumber = 1;
-
         foreach ($existingNumbers as $existingNumber) {
             if ($existingNumber > $nextNumber) {
-                // Found a gap, add available numbers
                 for ($i = $nextNumber; $i < $existingNumber && count($availableNumbers) < 5; $i++) {
                     $availableNumbers[] = $i;
                 }
             }
             $nextNumber = $existingNumber + 1;
         }
-
-        // Add next numbers if we don't have 5 yet
         while (count($availableNumbers) < 5) {
             $availableNumbers[] = $nextNumber++;
         }
-
         return [
             'is_duplicate' => $isDuplicate,
             'available_numbers' => $availableNumbers
         ];
+    }
+
+    // Helper: Get next available nomor urut (skip locked by others)
+    private function getNextNomorUrut($divisiId, $jenisSuratId)
+    {
+        $usedNumbers = Surat::where('divisi_id', $divisiId)
+            ->where('jenis_surat_id', $jenisSuratId)
+            ->pluck('nomor_urut')
+            ->toArray();
+        $lockedNumbers = NomorUrutLock::where('divisi_id', $divisiId)
+            ->where('jenis_surat_id', $jenisSuratId)
+            ->where(function($q) {
+                $q->whereNull('locked_until')->orWhere('locked_until', '>', now());
+            })
+            ->pluck('nomor_urut')
+            ->toArray();
+        $allUsed = array_unique(array_merge($usedNumbers, $lockedNumbers));
+        for ($i = 1; $i <= 999; $i++) {
+            if (!in_array($i, $allUsed)) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    public function preview(Request $request)
+    {
+        $request->validate([
+            'file_path' => 'required',
+            'nomor_urut' => 'required|integer',
+            'divisi_id' => 'required|exists:divisions,id',
+            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+            'tanggal_surat' => 'required|date',
+        ]);
+        $filePath = $request->input('file_path');
+        $storagePath = storage_path('app/' . $filePath);
+        \Log::info('Preview file path: ' . $storagePath . ' | Exists: ' . (file_exists($storagePath) ? 'yes' : 'no'));
+        if (!file_exists($storagePath)) {
+            return response('File tidak ditemukan: ' . $storagePath, 404);
+        }
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $request->nomor_urut,
+            Division::find($request->divisi_id)->kode_divisi,
+            JenisSurat::find($request->jenis_surat_id)->kode_jenis,
+            date('m', strtotime($request->tanggal_surat)),
+            date('Y', strtotime($request->tanggal_surat))
+        );
+        $outputPdfPath = storage_path('app/private/letters/preview_' . uniqid() . '.pdf');
+        $pythonScript = base_path('python/fill_nomor_surat.py');
+        $cmd = escapeshellcmd("python3 $pythonScript '$storagePath' '$outputPdfPath' '$nomorSurat'");
+        $output = [];
+        $return_var = 0;
+        try {
+            exec($cmd . ' 2>&1', $output, $return_var);
+        } catch (\Throwable $e) {
+            return response('Server tidak mengizinkan eksekusi script Python. Hubungi admin. Error: ' . $e->getMessage(), 500);
+        }
+        if ($return_var !== 0 || !file_exists($outputPdfPath)) {
+            return response('Gagal generate preview PDF. CMD: ' . $cmd . '\nOutput: ' . implode("\n", $output), 500);
+        }
+        return response()->file($outputPdfPath, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
+        ]);
     }
 } 

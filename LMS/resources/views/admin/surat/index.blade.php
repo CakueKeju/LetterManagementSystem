@@ -68,7 +68,7 @@
                             <table class="table table-striped">
                                 <thead>
                                     <tr>
-                                        <th>Kode Surat</th>
+                                        <th>Nomor Surat</th>
                                         <th>Deskripsi</th>
                                         <th>Divisi</th>
                                         <th>Jenis Surat</th>
@@ -83,9 +83,9 @@
                                     @foreach($surat as $s)
                                     <tr>
                                         <td>
-                                            <strong>{{ $s->kode_surat }}</strong>
+                                            <strong>{{ $s->nomor_surat }}</strong>
                                         </td>
-                                        <td>{{ Str::limit($s->deskripsi, 50) }}</td>
+                                        <td>{{ Str::limit($s->perihal, 50) }}</td>
                                         <td>{{ $s->division->nama_divisi ?? 'N/A' }}</td>
                                         <td>{{ $s->jenisSurat->nama_jenis ?? 'N/A' }}</td>
                                         <td>{{ $s->uploader->full_name ?? 'N/A' }}</td>
