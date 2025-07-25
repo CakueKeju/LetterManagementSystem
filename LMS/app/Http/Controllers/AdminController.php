@@ -134,9 +134,9 @@ class AdminController extends Controller
         $division = Division::find($request->divisi_id);
         $jenisSurat = JenisSurat::find($request->jenis_surat_id);
         $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
-            $request->nomor_urut,
-            $division->kode_divisi,
-            $jenisSurat->kode_jenis,
+            $request->nomor_urut, 
+            $division->kode_divisi, 
+            $jenisSurat->kode_jenis, 
             date('m', strtotime($request->tanggal_surat)),
             date('Y', strtotime($request->tanggal_surat))
         );

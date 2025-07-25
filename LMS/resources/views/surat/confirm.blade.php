@@ -154,10 +154,28 @@
                         document.getElementById('nomor_surat_hidden').value = nomorSurat;
                     }
                 }
+                function lockNomorUrutAjax() {
+                    var divisiId = document.getElementById('divisi_id').value;
+                    var jenisSuratId = document.getElementById('jenis_surat_id').value;
+                    var tanggalSurat = document.getElementById('tanggal_surat').value;
+                    if (!divisiId || !jenisSuratId) return;
+                    fetch(`/api/lock-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.nomor_urut) {
+                                document.getElementById('nomor_urut_hidden').value = data.nomor_urut;
+                                updateNomorSuratPreview();
+                            }
+                        });
+                }
                 document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('jenis_surat_id').addEventListener('change', updateNomorSuratPreview);
                     document.getElementById('tanggal_surat').addEventListener('change', updateNomorSuratPreview);
                     updateNomorSuratPreview();
+                    document.getElementById('jenis_surat_id').addEventListener('change', lockNomorUrutAjax);
+                    if (document.getElementById('divisi_id')) {
+                        document.getElementById('divisi_id').addEventListener('change', lockNomorUrutAjax);
+                    }
                 });
                 </script>
                 <!-- Removed nomor urut input and script, nomor urut is now prefilled and hidden -->

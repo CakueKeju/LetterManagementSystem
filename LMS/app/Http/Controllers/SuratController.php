@@ -159,6 +159,19 @@ class SuratController extends Controller
     public function showConfirmForm(Request $request)
     {
         $jenisSurat = JenisSurat::where('divisi_id', Auth::user()->divisi_id)->active()->get();
+        $divisiId = Auth::user()->divisi_id;
+        $jenisSuratId = $request->input('jenis_surat_id');
+        $nomorUrut = $request->input('nomor_urut');
+        if ($divisiId && $jenisSuratId && $nomorUrut) {
+            \App\Models\NomorUrutLock::updateOrCreate([
+                'divisi_id' => $divisiId,
+                'jenis_surat_id' => $jenisSuratId,
+                'nomor_urut' => $nomorUrut,
+            ], [
+                'user_id' => \Auth::id(),
+                'locked_until' => now()->addMinutes(10),
+            ]);
+        }
         return view('surat.confirm', [
             'file_path' => $request->input('file_path'),
             'file_size' => $request->input('file_size'),
@@ -525,15 +538,15 @@ class SuratController extends Controller
     private function checkDuplicate($nomorUrut, $divisiId, $jenisSuratId)
     {
         $isDuplicate = Surat::where('nomor_urut', $nomorUrut)
-            ->where('divisi_id', $divisiId)
+                           ->where('divisi_id', $divisiId)
             ->where('jenis_surat_id', $jenisSuratId)
-            ->exists();
+                           ->exists();
 
         $existingNumbers = Surat::where('divisi_id', $divisiId)
             ->where('jenis_surat_id', $jenisSuratId)
-            ->pluck('nomor_urut')
-            ->sort()
-            ->values();
+                               ->pluck('nomor_urut')
+                               ->sort()
+                               ->values();
 
         $availableNumbers = [];
         $nextNumber = 1;

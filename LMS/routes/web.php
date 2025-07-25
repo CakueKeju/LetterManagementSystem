@@ -77,3 +77,44 @@ Route::get('/api/next-nomor-urut', function (\Illuminate\Http\Request $request) 
     }
     return response()->json(['next_nomor_urut' => $nextNomorUrut]);
 });
+
+Route::get('/api/lock-nomor-urut', function (\Illuminate\Http\Request $request) {
+    $divisiId = $request->query('divisi_id');
+    $jenisSuratId = $request->query('jenis_surat_id');
+    $userId = auth()->id();
+    if (!$divisiId || !$jenisSuratId) {
+        return response()->json(['error' => 'divisi_id dan jenis_surat_id wajib'], 400);
+    }
+    // Hapus semua lock milik user ini (untuk divisi/jenis surat apapun)
+    \App\Models\NomorUrutLock::where('user_id', $userId)->delete();
+    $usedNumbers = \App\Models\Surat::where('divisi_id', $divisiId)
+        ->where('jenis_surat_id', $jenisSuratId)
+        ->pluck('nomor_urut')
+        ->toArray();
+    $lockedNumbers = \App\Models\NomorUrutLock::where('divisi_id', $divisiId)
+        ->where('jenis_surat_id', $jenisSuratId)
+        ->where(function($q) {
+            $q->whereNull('locked_until')->orWhere('locked_until', '>', now());
+        })
+        ->pluck('nomor_urut')
+        ->toArray();
+    $allUsed = array_unique(array_merge($usedNumbers, $lockedNumbers));
+    $nomorUrut = null;
+    for ($i = 1; $i <= 999; $i++) {
+        if (!in_array($i, $allUsed)) {
+            $nomorUrut = $i;
+            break;
+        }
+    }
+    if ($nomorUrut) {
+        \App\Models\NomorUrutLock::updateOrCreate([
+            'divisi_id' => $divisiId,
+            'jenis_surat_id' => $jenisSuratId,
+            'nomor_urut' => $nomorUrut,
+        ], [
+            'user_id' => $userId,
+            'locked_until' => now()->addMinutes(10),
+        ]);
+    }
+    return response()->json(['nomor_urut' => $nomorUrut]);
+});

@@ -31,7 +31,7 @@
                 </div>
         <div class="col-md-2">
             <input type="text" name="perihal" class="form-control" placeholder="Cari Perihal" value="{{ $filters['perihal'] ?? '' }}">
-        </div>
+                </div>
         <div class="col-md-2">
             <select name="sort" class="form-select">
                 <option value="newest" {{ ($filters['sort'] ?? '') === 'newest' ? 'selected' : '' }}>Terbaru</option>
