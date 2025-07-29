@@ -213,30 +213,66 @@ class AdminController extends Controller
             'file' => 'required|file|mimes:pdf,doc,docx',
         ]);
         $file = $request->file('file');
-        $lettersDir = storage_path('app/private/letters');
-        if (!is_dir($lettersDir)) {
-            mkdir($lettersDir, 0777, true);
-        }
-        $path = $file->store('private/letters');
+        $originalName = $file->getClientOriginalName();
         $fileSize = $file->getSize();
         $mimeType = $file->getMimeType();
+        $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        
+        \Log::info('Admin file upload started:', [
+            'original_name' => $originalName,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
+            'file_extension' => $fileExtension
+        ]);
+
+        // Ensure directory exists - PERBAIKAN DIREKTORI
+        $storageDir = storage_path('app/letters');
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+            \Log::info('Created directory: ' . $storageDir);
+        }
+
+        // Generate descriptive filename
+        $timestamp = date('Y-m-d_H-i-s');
+        $descriptiveName = sprintf(
+            'admin_surat_%s_%s.%s',
+            $timestamp,
+            substr(md5($originalName), 0, 8),
+            $fileExtension
+        );
+
+        // Store file dengan nama yang deskriptif
+        $filePath = $file->storeAs('letters', $descriptiveName);
+        
+        \Log::info('Admin file uploaded successfully:', [
+            'original_name' => $originalName,
+            'descriptive_name' => $descriptiveName,
+            'file_path' => $filePath,
+            'full_path' => storage_path('app/' . $filePath),
+            'exists' => Storage::exists($filePath),
+            'file_size' => Storage::size($filePath)
+        ]);
+        
         // Extract text (copy dari SuratController)
         $extracted = '';
         $ocrError = null;
         $extractionMethod = '';
-        $fileExtension = strtolower($file->getClientOriginalExtension());
         try {
             switch ($fileExtension) {
                 case 'pdf':
                     $extractionMethod = 'PDF Parser';
                     $parser = new \Smalot\PdfParser\Parser();
-                    $pdf = $parser->parseFile($file->getRealPath());
+                    $fullPath = storage_path('app/' . $filePath);
+                    \Log::info('Admin extracting PDF text from: ' . $fullPath);
+                    $pdf = $parser->parseFile($fullPath);
                     $extracted = $pdf->getText();
                     break;
                 case 'doc':
                 case 'docx':
                     $extractionMethod = 'Word Parser';
-                    $phpWord = \PhpOffice\PhpWord\IOFactory::load($file->getRealPath());
+                    $fullPath = storage_path('app/' . $filePath);
+                    \Log::info('Admin extracting Word text from: ' . $fullPath);
+                    $phpWord = \PhpOffice\PhpWord\IOFactory::load($fullPath);
                     $extracted = '';
                     foreach ($phpWord->getSections() as $section) {
                         foreach ($section->getElements() as $element) {
@@ -251,9 +287,15 @@ class AdminController extends Controller
             }
         } catch (\Exception $e) {
             $ocrError = 'Error ekstraksi teks (' . $extractionMethod . '): ' . $e->getMessage();
+            \Log::warning('Admin failed to extract text: ' . $e->getMessage(), [
+                'file_path' => $filePath,
+                'full_path' => storage_path('app/' . $filePath),
+                'exists' => file_exists(storage_path('app/' . $filePath))
+            ]);
         }
         // Prefill data kosong, admin pilih di konfirmasi
         $prefilledData = [
+            'nomor_urut' => null,
             'divisi_id' => null,
             'jenis_surat_id' => null,
             'perihal' => '',
@@ -261,16 +303,14 @@ class AdminController extends Controller
             'tanggal_diterima' => date('Y-m-d'),
             'is_private' => false,
         ];
-        // Tidak perlu lock nomor urut di sini, baru di konfirmasi
         return view('admin.surat.confirm', [
-            'file_path' => $path,
+            'file_path' => $filePath,
             'file_size' => $fileSize,
             'mime_type' => $mimeType,
-            'nomor_surat' => '',
             'extracted_text' => $extracted,
             'input' => $prefilledData,
             'divisions' => Division::all(),
-            'jenisSurat' => JenisSurat::all(),
+            'jenisSurat' => JenisSurat::active()->get(),
             'ocr_error' => $ocrError,
             'extraction_method' => $extractionMethod,
         ]);
@@ -315,24 +355,36 @@ class AdminController extends Controller
             date('m', strtotime($request->tanggal_surat)),
             date('Y', strtotime($request->tanggal_surat))
         );
+        
+        // Fill PDF dengan nomor surat
         $filePath = $request->input('file_path');
-        $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        $finalPdfPath = 'private/letters/final_' . uniqid() . '.pdf';
-        $outputPdfPath = storage_path('app/' . $finalPdfPath);
-        $pythonScript = base_path('python/fill_nomor_surat.py');
-        $cmd = escapeshellcmd("python3 $pythonScript '$filePath' '$outputPdfPath' '$nomorSurat'");
-        $output = [];
-        $return_var = 0;
-        try {
-            exec($cmd, $output, $return_var);
-        } catch (\Throwable $e) {
-            return back()->withErrors(['file_path' => 'Server tidak mengizinkan eksekusi script Python. Hubungi admin.'])->withInput();
+        $storagePath = storage_path('app/' . $filePath);
+        $fileExtension = strtolower(pathinfo($storagePath, PATHINFO_EXTENSION));
+        
+        if ($fileExtension === 'pdf') {
+            $filledPdfPath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
+            if ($filledPdfPath) {
+                $filePath = 'letters/filled_' . uniqid() . '.pdf';
+                \Illuminate\Support\Facades\Storage::put($filePath, file_get_contents($filledPdfPath));
+                unlink($filledPdfPath); // Hapus file temporary
+                $fileSize = \Illuminate\Support\Facades\Storage::size($filePath);
+                $mimeType = 'application/pdf';
+            }
+        } elseif (in_array($fileExtension, ['doc', 'docx'])) {
+            $filledWordPath = $this->fillWordWithNomorSurat($storagePath, $nomorSurat);
+            if ($filledWordPath) {
+                $filePath = 'letters/filled_' . uniqid() . '.' . $fileExtension;
+                \Illuminate\Support\Facades\Storage::put($filePath, file_get_contents($filledWordPath));
+                unlink($filledWordPath); // Hapus file temporary
+                $fileSize = \Illuminate\Support\Facades\Storage::size($filePath);
+                $mimeType = $request->input('mime_type');
+            }
+        } else {
+            // Untuk file lain, simpan asli
+            $fileSize = $request->input('file_size');
+            $mimeType = $request->input('mime_type');
         }
-        if ($return_var !== 0 || !file_exists($outputPdfPath)) {
-            return back()->withErrors(['file_path' => 'Gagal generate file PDF akhir.'])->withInput();
-        }
-        $mimeType = 'application/pdf';
-        $fileSize = filesize($outputPdfPath);
+        
         $surat = \App\Models\Surat::create([
             'nomor_urut' => $request->input('nomor_urut'),
             'nomor_surat' => $nomorSurat,
@@ -341,7 +393,7 @@ class AdminController extends Controller
             'perihal' => $request->input('perihal'),
             'tanggal_surat' => $request->input('tanggal_surat'),
             'tanggal_diterima' => $request->input('tanggal_diterima'),
-            'file_path' => $finalPdfPath,
+            'file_path' => $filePath,
             'file_size' => $fileSize,
             'mime_type' => $mimeType,
             'is_private' => $request->input('is_private', false),
@@ -354,6 +406,362 @@ class AdminController extends Controller
             }
         }
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload oleh admin!');
+    }
+
+    /**
+     * Fill PDF with nomor surat by detecting and replacing placeholder text
+     */
+    private function fillPdfWithNomorSurat($pdfPath, $nomorSurat)
+    {
+        try {
+            // Parse PDF untuk detect text dan koordinat
+            $parser = new \Smalot\PdfParser\Parser();
+            $pdf = $parser->parseFile($pdfPath);
+            
+            // Cari text yang mengandung placeholder - lebih fleksibel
+            $placeholderPatterns = [
+                // Pattern dengan "Nomor:"
+                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                'Nomor:\s*\.\.\.\.\./\.\.\.\.\.',
+                'Nomor:\s*\.\.\.\.\.',
+                // Pattern tanpa "Nomor:"
+                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
+                '\.\.\.\.\./\.\.\.\.\.',
+                '\.\.\.\.\.',
+                // Pattern dengan variasi dots
+                '\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\.',
+                '\.\.\./\.\.\./\.\.\./\.\.\./\.\.\./\.\.\.',
+                '\.\./\.\./\.\./\.\./\.\./\.\.',
+                '\./\./\./\./\./\.',
+                // Pattern dengan underscore atau dash
+                '_____/_____/_____/_____/_____/_____',
+                '-----/-----/-----/-----/-----/-----',
+                '____/____/____/____/____/____',
+                '----/----/----/----/----/----',
+                // Pattern dengan spasi
+                '\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\.',
+                '\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\.',
+            ];
+            
+            $foundPlaceholder = false;
+            $replacementData = [];
+            
+            foreach ($pdf->getPages() as $pageIndex => $page) {
+                $text = $page->getText();
+                
+                foreach ($placeholderPatterns as $pattern) {
+                    if (preg_match('/' . $pattern . '/i', $text, $matches)) {
+                        $foundPlaceholder = true;
+                        $matchedText = $matches[0];
+                        
+                        \Log::info('Placeholder ditemukan:', [
+                            'pattern' => $pattern,
+                            'matched_text' => $matchedText,
+                            'nomor_surat' => $nomorSurat,
+                            'page' => $pageIndex
+                        ]);
+                        
+                        // Extract font info dan koordinat dari page
+                        $fontInfo = $this->extractFontInfo($page);
+                        
+                        $replacementData[] = [
+                            'page' => $pageIndex,
+                            'pattern' => $pattern,
+                            'matched_text' => $matchedText,
+                            'replacement' => $nomorSurat,
+                            'font_info' => $fontInfo,
+                            'position' => [
+                                'x' => 50, // Default position
+                                'y' => 50,
+                                'width' => strlen($nomorSurat) * 6, // Approximate width
+                                'height' => 12
+                            ]
+                        ];
+                        
+                        break 2; // Hanya replace yang pertama ditemukan
+                    }
+                }
+            }
+            
+            if (!$foundPlaceholder) {
+                \Log::warning('Placeholder text tidak ditemukan di PDF: ' . $pdfPath);
+                \Log::info('Text yang ada di PDF:', ['text' => substr($text, 0, 500)]);
+                return null;
+            }
+            
+            // Buat PDF baru dengan replacement
+            return $this->createFilledPdf($pdfPath, $replacementData);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error filling PDF: ' . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Extract font information from PDF page
+     */
+    private function extractFontInfo($page)
+    {
+        try {
+            // Coba extract font info dari page content
+            $content = $page->getText();
+            
+            // Default font info jika tidak bisa detect
+            return [
+                'font_name' => 'Helvetica',
+                'font_size' => 12,
+                'font_color' => [0, 0, 0] // Black
+            ];
+        } catch (\Exception $e) {
+            \Log::warning('Tidak bisa extract font info: ' . $e->getMessage());
+            return [
+                'font_name' => 'Helvetica',
+                'font_size' => 12,
+                'font_color' => [0, 0, 0]
+            ];
+        }
+    }
+    
+    /**
+     * Create filled PDF with replaced text
+     */
+    private function createFilledPdf($originalPath, $replacementData)
+    {
+        try {
+            \Log::info('Creating filled PDF:', [
+                'original_path' => $originalPath,
+                'replacement_count' => count($replacementData)
+            ]);
+            
+            // Buat temporary file untuk hasil
+            $tempPath = storage_path('app/temp_filled_pdf_' . uniqid() . '.pdf');
+            
+            if (empty($replacementData)) {
+                // Jika tidak ada replacement data, copy file asli
+                if (copy($originalPath, $tempPath)) {
+                    \Log::info('PDF copied to temp location (no replacements): ' . $tempPath);
+                    return $tempPath;
+                } else {
+                    \Log::error('Failed to copy PDF to temp location');
+                    return null;
+                }
+            }
+            
+            // Implementasi pengisian PDF menggunakan FPDI - Approach yang lebih sederhana
+            try {
+                // Import FPDI dan FPDF
+                $pdf = new \setasign\Fpdi\Fpdi();
+                
+                // Set document properties
+                $pdf->SetCreator('LMS System');
+                $pdf->SetAuthor('LMS System');
+                $pdf->SetTitle('Filled Document');
+                
+                // Get page count from original PDF
+                $pageCount = $pdf->setSourceFile($originalPath);
+                \Log::info('Original PDF has ' . $pageCount . ' pages');
+                
+                // Process each page
+                for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
+                    // Import page
+                    $templateId = $pdf->importPage($pageNo);
+                    $size = $pdf->getTemplateSize($templateId);
+                    $pdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
+                    $pdf->useTemplate($templateId);
+                    
+                    // Apply replacements for this page
+                    foreach ($replacementData as $replacement) {
+                        if ($replacement['page'] == ($pageNo - 1)) { // PDF pages are 0-indexed
+                            \Log::info('Applying replacement on page ' . $pageNo . ': ' . $replacement['replacement']);
+                            
+                            // Set font properties
+                            $pdf->SetFont('Arial', '', 12);
+                            $pdf->SetTextColor(0, 0, 0);
+                            
+                            // Use position from replacement data if available
+                            $x = $replacement['position']['x'] ?? 50;
+                            $y = $replacement['position']['y'] ?? 50;
+                            
+                            // Add text overlay
+                            $pdf->SetXY($x, $y);
+                            $pdf->Write(0, $replacement['replacement']);
+                            
+                            \Log::info('Text added at position: x=' . $x . ', y=' . $y . ', text: ' . $replacement['replacement']);
+                        }
+                    }
+                }
+                
+                // Save the filled PDF
+                $pdf->Output($tempPath, 'F');
+                
+                if (file_exists($tempPath)) {
+                    \Log::info('Filled PDF created successfully: ' . $tempPath);
+                    // Set proper permissions
+                    chmod($tempPath, 0644);
+                    return $tempPath;
+                } else {
+                    \Log::error('Failed to create filled PDF');
+                    return null;
+                }
+                
+            } catch (\Exception $e) {
+                \Log::error('Error with FPDI: ' . $e->getMessage(), [
+                    'trace' => $e->getTraceAsString()
+                ]);
+                
+                // Fallback: create simple PDF with text overlay
+                try {
+                    \Log::info('Trying fallback approach: create simple PDF with text');
+                    $pdf = new \setasign\Fpdi\Fpdi();
+                    $pdf->SetCreator('LMS System');
+                    $pdf->SetAuthor('LMS System');
+                    $pdf->SetTitle('Filled Document');
+                    
+                    // Add a page
+                    $pdf->AddPage();
+                    
+                    // Add text
+                    $pdf->SetFont('Arial', '', 12);
+                    $pdf->SetTextColor(0, 0, 0);
+                    $pdf->SetXY(50, 50);
+                    
+                    foreach ($replacementData as $replacement) {
+                        $pdf->Write(0, 'Nomor Surat: ' . $replacement['replacement']);
+                        break; // Only use first replacement
+                    }
+                    
+                    $pdf->Output($tempPath, 'F');
+                    
+                    if (file_exists($tempPath)) {
+                        \Log::info('Fallback PDF created successfully: ' . $tempPath);
+                        // Set proper permissions
+                        chmod($tempPath, 0644);
+                        return $tempPath;
+                    }
+                } catch (\Exception $fallbackError) {
+                    \Log::error('Fallback also failed: ' . $fallbackError->getMessage());
+                }
+                
+                // Final fallback: copy original file
+                if (copy($originalPath, $tempPath)) {
+                    \Log::info('Final fallback: PDF copied to temp location: ' . $tempPath);
+                    return $tempPath;
+                } else {
+                    \Log::error('Final fallback failed: Could not copy PDF');
+                    return null;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error creating filled PDF: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Fill Word document with nomor surat by detecting and replacing placeholder text
+     */
+    private function fillWordWithNomorSurat($wordPath, $nomorSurat)
+    {
+        try {
+            // Load Word document
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($wordPath);
+            
+            // Cari text yang mengandung placeholder - lebih fleksibel
+            $placeholderPatterns = [
+                // Pattern dengan "Nomor:"
+                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\./i',
+                '/Nomor:\s*\.\.\.\.\./i',
+                // Pattern tanpa "Nomor:"
+                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/\.\.\.\.\.\/\.\.\.\.\./i',
+                '/\.\.\.\.\./i',
+                // Pattern dengan variasi dots
+                '/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\./i',
+                '/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\./i',
+                '/\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/\.\./i',
+                '/\.\/\.\/\.\/\.\/\.\/\./i',
+                // Pattern dengan underscore atau dash
+                '/_____\/_____\/_____\/_____\/_____\/_____/i',
+                '/-----\/-----\/-----\/-----\/-----\/-----/i',
+                '/____\/____\/____\/____\/____\/____/i',
+                '/----\/----\/----\/----\/----\/----/i',
+                // Pattern dengan spasi
+                '/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\./i',
+                '/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\./i',
+            ];
+            
+            $foundPlaceholder = false;
+            $replacementData = [];
+            
+            // Iterate through all sections
+            foreach ($phpWord->getSections() as $section) {
+                // Iterate through all elements in the section
+                foreach ($section->getElements() as $element) {
+                    if (method_exists($element, 'getText')) {
+                        $text = $element->getText();
+                        
+                        foreach ($placeholderPatterns as $pattern) {
+                            if (preg_match($pattern, $text, $matches)) {
+                                $foundPlaceholder = true;
+                                $matchedText = $matches[0];
+                                
+                                \Log::info('Word Placeholder ditemukan:', [
+                                    'pattern' => $pattern,
+                                    'matched_text' => $matchedText,
+                                    'nomor_surat' => $nomorSurat
+                                ]);
+                                
+                                // Replace text in the element
+                                $newText = preg_replace($pattern, $nomorSurat, $text);
+                                $element->setText($newText);
+                                
+                                $replacementData[] = [
+                                    'original_text' => $matchedText,
+                                    'replacement' => $nomorSurat,
+                                    'new_text' => $newText
+                                ];
+                                
+                                break 2; // Hanya replace yang pertama ditemukan
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (!$foundPlaceholder) {
+                \Log::warning('Placeholder text tidak ditemukan di Word document: ' . $wordPath);
+                return null;
+            }
+            
+            // Save the modified Word document
+            $tempPath = storage_path('app/temp_filled_word_' . uniqid() . '.docx');
+            $objWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+            $objWriter->save($tempPath);
+            
+            \Log::info('Word document filled: ' . $tempPath);
+            return $tempPath;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error filling Word document: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**

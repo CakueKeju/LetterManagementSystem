@@ -2,26 +2,38 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class NomorUrutLock extends Model
 {
     use HasFactory;
-
-    protected $table = 'nomor_urut_locks';
 
     protected $fillable = [
         'divisi_id',
         'jenis_surat_id',
         'nomor_urut',
         'user_id',
-        'locked_until',
+        'locked_until'
     ];
 
-    protected $dates = [
-        'locked_until',
-        'created_at',
-        'updated_at',
+    protected $casts = [
+        'locked_until' => 'datetime',
+        'jenis_surat_id' => 'integer',
     ];
+
+    public function division()
+    {
+        return $this->belongsTo(Division::class, 'divisi_id');
+    }
+
+    public function jenisSurat()
+    {
+        return $this->belongsTo(JenisSurat::class, 'jenis_surat_id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 } 

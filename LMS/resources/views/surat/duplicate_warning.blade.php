@@ -4,7 +4,7 @@
 <div class="container">
     <div class="alert alert-warning">
         <h4>⚠️ Peringatan: Nomor Urut Duplikat</h4>
-        <p>Nomor urut <strong>{{ $extracted_nomor_urut }}</strong> sudah ada di divisi yang dipilih.</p>
+        <p>Nomor urut <strong>{{ $nomor_urut }}</strong> sudah ada di divisi yang dipilih.</p>
     </div>
 
     <div class="card mb-4">
@@ -12,29 +12,35 @@
             <h5>Informasi Duplikat</h5>
         </div>
         <div class="card-body">
-            <p><strong>Nomor yang terdeteksi:</strong> {{ $extracted_nomor_urut }}</p>
+            <p><strong>Nomor yang terdeteksi:</strong> {{ $nomor_urut }}</p>
             <p><strong>Divisi:</strong> 
                 @php
-                    $division = $divisions->find($extracted_divisi_id);
+                    $division = \App\Models\Division::find($divisi_id);
                     echo $division ? $division->nama_divisi : 'Tidak terdeteksi';
                 @endphp
             </p>
             <div class="mt-3">
                 <h6>Nomor urut yang tersedia untuk divisi ini:</h6>
                 <div class="row">
-                    @foreach($available_numbers as $number)
+                    @php
+                        // Generate available numbers (001-999)
+                        $availableNumbers = [];
+                        for ($i = 1; $i <= 999; $i++) {
+                            $availableNumbers[] = sprintf('%03d', $i);
+                        }
+                    @endphp
+                    @foreach(array_slice($availableNumbers, 0, 20) as $number)
                         <div class="col-md-2 mb-2">
                             <span class="badge bg-success">{{ $number }}</span>
                         </div>
                     @endforeach
+                    @if(count($availableNumbers) > 20)
+                        <div class="col-12">
+                            <small class="text-muted">... dan {{ count($availableNumbers) - 20 }} nomor lainnya</small>
+                        </div>
+                    @endif
                 </div>
             </div>
-            @if($extracted_text)
-            <div class="mt-3">
-                <h6>Hasil OCR (untuk referensi):</h6>
-                <textarea class="form-control" rows="4" readonly>{{ $extracted_text }}</textarea>
-            </div>
-            @endif
         </div>
     </div>
 
@@ -57,7 +63,7 @@
                         <div class="mb-3">
                             <label for="suggested_number" class="form-label">Pilih Nomor:</label>
                             <select class="form-select" id="suggested_number" name="suggested_number">
-                                @foreach($available_numbers as $number)
+                                @foreach(array_slice($availableNumbers, 0, 50) as $number)
                                     <option value="{{ $number }}">{{ $number }}</option>
                                 @endforeach
                             </select>

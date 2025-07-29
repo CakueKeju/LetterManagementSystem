@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('nomor_urut_locks', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('divisi_id');
-            $table->unsignedBigInteger('jenis_surat_id');
+            $table->unsignedBigInteger('jenis_surat_id')->nullable();
             $table->integer('nomor_urut');
             $table->unsignedBigInteger('user_id');
             $table->timestamp('locked_until')->nullable();

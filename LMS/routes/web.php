@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SuratController;
 use App\Http\Controllers\AdminController;
+use Illuminate\Http\Request;
 
 Route::get('/', function () {
     return view('welcome');
@@ -10,15 +11,80 @@ Route::get('/', function () {
 
 Auth::routes();
 
+Route::middleware(['auth'])->group(function () {
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 
-Route::get('/surat', [SuratController::class, 'index'])->name('surat.index');
-Route::get('/surat/upload', [SuratController::class, 'showUploadForm'])->name('surat.upload');
-Route::post('/surat/upload', [SuratController::class, 'handleUpload'])->name('surat.handleUpload');
-Route::get('/surat/confirm', [SuratController::class, 'showConfirmForm'])->name('surat.confirm');
-Route::post('/surat/store', [SuratController::class, 'store'])->name('surat.store');
-Route::get('/surat/users-for-access', [SuratController::class, 'getUsersForAccess'])->name('surat.getUsersForAccess');
-Route::post('/surat/preview', [App\Http\Controllers\SuratController::class, 'preview'])->name('surat.preview');
+    // Surat routes
+    Route::get('/surat/upload', [App\Http\Controllers\SuratController::class, 'showUploadForm'])->name('surat.upload');
+    Route::post('/surat/upload', [App\Http\Controllers\SuratController::class, 'handleUpload'])->name('surat.handleUpload');
+    Route::get('/surat/confirm', [App\Http\Controllers\SuratController::class, 'showConfirmForm'])->name('surat.confirm');
+    Route::post('/surat/store', [App\Http\Controllers\SuratController::class, 'store'])->name('surat.store');
+    Route::post('/surat/final-store', [App\Http\Controllers\SuratController::class, 'finalStore'])->name('surat.final-store');
+    Route::post('/surat/store-from-preview', [App\Http\Controllers\SuratController::class, 'storeFromPreview'])->name('surat.store-from-preview');
+    Route::post('/surat/preview', [App\Http\Controllers\SuratController::class, 'preview'])->name('surat.preview');
+    Route::get('/surat/preview', [App\Http\Controllers\SuratController::class, 'preview'])->name('surat.preview.get');
+    Route::get('/surat/get-users-for-access', [App\Http\Controllers\SuratController::class, 'getUsersForAccess'])->name('surat.getUsersForAccess');
+    Route::get('/surat', [App\Http\Controllers\SuratController::class, 'index'])->name('surat.index');
+    
+    // API routes for dynamic functionality
+    Route::post('/api/next-nomor-urut', function (Request $request) {
+        $divisiId = $request->input('divisi_id');
+        $jenisSuratId = $request->input('jenis_surat_id');
+        
+        if (!$divisiId || !$jenisSuratId) {
+            return response()->json(['error' => 'Divisi ID dan Jenis Surat ID diperlukan'], 400);
+        }
+        
+        $controller = new \App\Http\Controllers\SuratController();
+        $nextNomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId);
+        
+        return response()->json(['next_nomor_urut' => $nextNomorUrut]);
+    })->middleware('auth');
+
+    Route::get('/api/next-nomor-urut', function (Request $request) {
+        $divisiId = $request->input('divisi_id');
+        $jenisSuratId = $request->input('jenis_surat_id');
+        
+        if (!$divisiId || !$jenisSuratId) {
+            return response()->json(['error' => 'Divisi ID dan Jenis Surat ID diperlukan'], 400);
+        }
+        
+        $controller = new \App\Http\Controllers\SuratController();
+        $nextNomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId);
+        
+        return response()->json(['next_nomor_urut' => $nextNomorUrut]);
+    })->middleware('auth');
+    
+    Route::get('/api/lock-nomor-urut', function (Request $request) {
+        $divisiId = $request->get('divisi_id');
+        $jenisSuratId = $request->get('jenis_surat_id');
+        
+        if (!$divisiId || !$jenisSuratId) {
+            return response()->json(['error' => 'Missing required parameters'], 400);
+        }
+        
+        $controller = new App\Http\Controllers\SuratController();
+        $nomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId);
+        
+        if ($nomorUrut) {
+            \App\Models\NomorUrutLock::updateOrCreate([
+                'divisi_id' => $divisiId,
+                'jenis_surat_id' => $jenisSuratId,
+                'nomor_urut' => $nomorUrut,
+            ], [
+                'user_id' => \Auth::id(),
+                'locked_until' => now()->addMinutes(10),
+            ]);
+        }
+        
+        return response()->json(['nomor_urut' => $nomorUrut]);
+    });
+    
+    Route::get('/api/cancel-nomor-urut-lock', function () {
+        \App\Models\NomorUrutLock::where('user_id', \Auth::id())->delete();
+        return response()->json(['success' => true]);
+    });
+});
 
 // Admin Routes
 Route::prefix('admin')->name('admin.')->group(function () {
@@ -58,63 +124,4 @@ Route::prefix('admin')->name('admin.')->group(function () {
 Route::middleware(['auth', 'admin'])->group(function() {
     Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'showUploadForm'])->name('admin.surat.upload');
     Route::post('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'handleUpload'])->name('admin.surat.handleUpload');
-});
-
-Route::get('/api/next-nomor-urut', function (\Illuminate\Http\Request $request) {
-    $divisiId = $request->query('divisi_id');
-    $jenisSuratId = $request->query('jenis_surat_id');
-    $existingNumbers = \App\Models\Surat::where('divisi_id', $divisiId)
-        ->where('jenis_surat_id', $jenisSuratId)
-        ->pluck('nomor_urut')
-        ->sort()
-        ->values();
-    $nextNomorUrut = 1;
-    foreach ($existingNumbers as $existingNumber) {
-        if ($existingNumber > $nextNomorUrut) {
-            break;
-        }
-        $nextNomorUrut = $existingNumber + 1;
-    }
-    return response()->json(['next_nomor_urut' => $nextNomorUrut]);
-});
-
-Route::get('/api/lock-nomor-urut', function (\Illuminate\Http\Request $request) {
-    $divisiId = $request->query('divisi_id');
-    $jenisSuratId = $request->query('jenis_surat_id');
-    $userId = auth()->id();
-    if (!$divisiId || !$jenisSuratId) {
-        return response()->json(['error' => 'divisi_id dan jenis_surat_id wajib'], 400);
-    }
-    // Hapus semua lock milik user ini (untuk divisi/jenis surat apapun)
-    \App\Models\NomorUrutLock::where('user_id', $userId)->delete();
-    $usedNumbers = \App\Models\Surat::where('divisi_id', $divisiId)
-        ->where('jenis_surat_id', $jenisSuratId)
-        ->pluck('nomor_urut')
-        ->toArray();
-    $lockedNumbers = \App\Models\NomorUrutLock::where('divisi_id', $divisiId)
-        ->where('jenis_surat_id', $jenisSuratId)
-        ->where(function($q) {
-            $q->whereNull('locked_until')->orWhere('locked_until', '>', now());
-        })
-        ->pluck('nomor_urut')
-        ->toArray();
-    $allUsed = array_unique(array_merge($usedNumbers, $lockedNumbers));
-    $nomorUrut = null;
-    for ($i = 1; $i <= 999; $i++) {
-        if (!in_array($i, $allUsed)) {
-            $nomorUrut = $i;
-            break;
-        }
-    }
-    if ($nomorUrut) {
-        \App\Models\NomorUrutLock::updateOrCreate([
-            'divisi_id' => $divisiId,
-            'jenis_surat_id' => $jenisSuratId,
-            'nomor_urut' => $nomorUrut,
-        ], [
-            'user_id' => $userId,
-            'locked_until' => now()->addMinutes(10),
-        ]);
-    }
-    return response()->json(['nomor_urut' => $nomorUrut]);
 });
