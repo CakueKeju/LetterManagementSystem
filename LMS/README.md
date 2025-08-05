@@ -1,61 +1,217 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Letter Management System (LMS)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistema pengelolaan surat berbasis Laravel dengan fitur counter otomatis per bulan dan pengolahan dokumen terintegrasi.
 
-## About Laravel
+## Features
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+### 📄 Letter Management
+- Upload surat dalam format PDF, DOC, DOCX
+- Auto-convert Word documents ke PDF menggunakan LibreOffice
+- Ekstraksi nomor surat otomatis dari dokumen
+- Fill PDF dengan nomor surat yang baru
+- Preview surat sebelum finalisasi
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+### 🔢 Smart Counter System
+- **Multi-Month Support**: Counter independen untuk setiap bulan
+- **Auto-Reset**: Tidak perlu reset manual, setiap bulan otomatis mulai dari 1
+- **Historical Input**: Bisa input surat untuk bulan sebelumnya tanpa mengganggu counter bulan berjalan
+- **Format**: `001/DIVISI/JENIS/INTENS/MM/YYYY`
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### 🔒 Lock System
+- Temporary lock nomor urut untuk mencegah duplicate
+- Auto-cleanup expired locks
+- Lock berlaku 10 menit selama proses input
 
-## Learning Laravel
+### 👥 Access Control
+- Surat public: Visible untuk seluruh divisi
+- Surat private: Hanya untuk user yang dipilih
+- Role-based access (Admin/User)
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 🔍 Advanced Search & Filter
+- Filter berdasarkan divisi, jenis surat, tanggal
+- Search dalam content surat
+- Export data ke berbagai format
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Installation
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### Requirements
+- PHP 8.1+
+- Laravel 11
+- SQLite/MySQL/PostgreSQL
+- LibreOffice (untuk konversi Word ke PDF)
+- Composer
 
-## Laravel Sponsors
+### Setup
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+# Clone repository
+git clone https://github.com/CakueKeju/LetterManagementSystem.git
+cd LetterManagementSystem/LMS
 
-### Premium Partners
+# Install dependencies
+composer install
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+# Setup environment
+cp .env.example .env
+php artisan key:generate
 
-## Contributing
+# Database setup
+php artisan migrate
+php artisan db:seed
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# Create storage links
+php artisan storage:link
 
-## Code of Conduct
+# Install LibreOffice (Windows)
+# Download dan install dari https://www.libreoffice.org/download/download/
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Database Structure
 
-## Security Vulnerabilities
+### Core Tables
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+#### `counters`
+Menyimpan counter per jenis surat per bulan:
+```sql
+id | jenis_surat_id | month_year | counter
+1  | 1              | 2025-08    | 3
+2  | 1              | 2025-07    | 5
+3  | 2              | 2025-08    | 1
+```
+
+#### `surat`
+Data surat dengan nomor urut dan file:
+```sql
+id | nomor_urut | nomor_surat | jenis_surat_id | divisi_id | file_path | tanggal_surat
+```
+
+#### `nomor_urut_locks`
+Temporary locks untuk mencegah duplicate:
+```sql
+id | divisi_id | jenis_surat_id | nomor_urut | user_id | locked_until
+```
+
+## Counter System Logic
+
+### Multi-Month Counter
+Sistem counter baru mendukung input surat untuk berbagai bulan:
+
+```php
+// Input surat bulan ini
+$jenisSurat->peekNextCounter(); // Auto menggunakan 2025-08
+
+// Input surat bulan lalu  
+$jenisSurat->peekNextCounter('2025-07'); // Counter Juli terpisah
+
+// Input surat bulan depan
+$jenisSurat->peekNextCounter('2025-09'); // Counter September baru
+```
+
+### Automatic Flow
+1. **Upload**: User upload file surat
+2. **Extract**: Sistem ekstrak tanggal surat dari file
+3. **Counter**: Sistem ambil counter berdasarkan bulan dari tanggal surat
+4. **Preview**: User lihat preview dengan nomor yang akan digunakan
+5. **Finalize**: Sistem increment counter dan simpan surat
+
+## Console Commands
+
+### Maintenance
+```bash
+# System maintenance (scheduled hourly)
+php artisan lms:maintenance
+
+# Force cleanup
+php artisan lms:cleanup --force
+
+# Check counter status
+php artisan surat:counter-status
+```
+
+### Scheduling
+Di `routes/console.php`:
+```php
+// Maintenance setiap jam
+Schedule::command('lms:maintenance')->hourly();
+
+// Deep cleanup harian jam 2 pagi
+Schedule::command('lms:cleanup --force')->dailyAt('02:00');
+```
+
+## Usage Examples
+
+### Counter untuk Bulan Berbeda
+```php
+$jenisSurat = JenisSurat::find(1);
+
+// Lihat counter bulan ini
+$current = $jenisSurat->getCurrentCounter(); // 2025-08
+
+// Lihat counter bulan lalu  
+$july = $jenisSurat->getCurrentCounter('2025-07');
+
+// Preview nomor berikutnya
+$next = $jenisSurat->peekNextCounter('2025-08');
+
+// Increment counter (saat finalize)
+$final = $jenisSurat->incrementCounter('2025-08');
+```
+
+### Input Surat Historical
+```php
+// Controller akan auto-detect bulan dari tanggal_surat
+$tanggalSurat = '2025-07-15'; // Juli 2025
+$nextNumber = $this->getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat);
+// Akan menggunakan counter Juli, tidak mengganggu counter Agustus
+```
+
+## Migration History
+
+### Recent Updates (August 2025)
+- ✅ Created `counters` table (simplified from `jenis_surat_counters`)
+- ✅ Migrated existing counter data from old system  
+- ✅ Removed old `counter` and `last_reset_month` columns from `jenis_surat`
+- ✅ Updated all controllers and models to use new counter system
+- ✅ Deprecated manual reset commands (auto-reset per month)
+- ✅ Clean architecture with separation of concerns
+
+## Benefits of New System
+
+### ✅ Solved Problems
+- **Multiple Month Support**: Bisa input surat bulan sebelumnya
+- **Data Integrity**: Counter bulan lalu tidak berubah
+- **Scalability**: Unlimited historical input
+- **Performance**: Efficient queries dengan proper indexing
+- **Maintenance**: No manual reset needed
+
+### 🚀 Performance
+- Index pada `(jenis_surat_id, month_year)` untuk query cepat
+- Minimal database locks dengan transaction scope
+- Auto-cleanup expired locks untuk mencegah bloat
+
+## Troubleshooting
+
+### LibreOffice Issues
+```bash
+# Test LibreOffice conversion
+soffice --headless --convert-to pdf --outdir /tmp test.docx
+```
+
+### Counter Issues
+```bash
+# Check counter status
+php artisan surat:counter-status
+
+# Check database directly
+php artisan db:table counters
+```
+
+### Lock Issues
+```bash
+# Clean expired locks manually
+php artisan lms:cleanup --force
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).

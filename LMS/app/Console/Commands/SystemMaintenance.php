@@ -49,33 +49,12 @@ class SystemMaintenance extends Command
         try {
             $currentMonth = Carbon::now()->format('Y-m');
             
-            $jenisSurat = JenisSurat::where(function($query) use ($currentMonth) {
-                $query->whereNull('last_reset_month')
-                      ->orWhere('last_reset_month', '!=', $currentMonth);
-            })->get();
-
-            if ($jenisSurat->isEmpty()) {
-                return;
-            }
-
-            $resetCount = 0;
-            foreach ($jenisSurat as $surat) {
-                $surat->update([
-                    'counter' => 0,
-                    'last_reset_month' => $currentMonth
-                ]);
-                
-                $resetCount++;
-                Log::info('Counter reset', [
-                    'jenis_surat_id' => $surat->id,
-                    'jenis_surat_nama' => $surat->nama,
-                    'reset_month' => $currentMonth
-                ]);
-            }
-
-            Log::info("System maintenance: reset {$resetCount} counters for month {$currentMonth}");
+            // With new counter system, monthly resets are handled automatically
+            // when first letter is created for a new month. No manual reset needed.
+            Log::info("System maintenance: Monthly counter resets are now handled automatically by new counter system for month {$currentMonth}");
+            
         } catch (\Exception $e) {
-            Log::error('Counter reset failed', ['error' => $e->getMessage()]);
+            Log::error('Counter reset check failed', ['error' => $e->getMessage()]);
         }
     }
 

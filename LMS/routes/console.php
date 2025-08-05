@@ -19,3 +19,9 @@ Schedule::command('lms:maintenance --force')
     ->dailyAt('02:00')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/daily-maintenance.log'));
+
+// Clean up duplicate locks weekly on Sunday at 3 AM
+Schedule::command('locks:cleanup-duplicates')
+    ->weeklyOn(0, '03:00')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/duplicate-locks-cleanup.log'));

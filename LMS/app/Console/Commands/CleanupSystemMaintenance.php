@@ -97,47 +97,23 @@ class CleanupSystemMaintenance extends Command
      */
     private function handleMonthlyCounterResets()
     {
-        $this->info('Checking for monthly counter resets...');
+        $this->info('Checking monthly counter system status...');
 
         try {
             $currentMonth = Carbon::now()->format('Y-m');
-            $resetCount = 0;
+            
+            // With new counter system, monthly resets are handled automatically
+            // when first letter is created for a new month. Just log the status.
+            Log::info("Monthly counter system check", [
+                'current_month' => $currentMonth,
+                'system' => 'New automatic counter system active - no manual resets needed'
+            ]);
+            
+            $this->info('Monthly counter system: Automatic handling active');
 
-            // Get all jenis surat that need reset
-            $jenisSemuaSurat = JenisSurat::where(function($query) use ($currentMonth) {
-                $query->whereNull('last_reset_month')
-                      ->orWhere('last_reset_month', '!=', $currentMonth);
-            })->get();
-
-            foreach ($jenisSemuaSurat as $jenisSurat) {
-                $oldCounter = $jenisSurat->counter;
-                $oldResetMonth = $jenisSurat->last_reset_month;
-
-                // Reset counter for new month
-                $jenisSurat->counter = 0;
-                $jenisSurat->last_reset_month = $currentMonth;
-                $jenisSurat->save();
-
-                $resetCount++;
-                
-                Log::info("Monthly counter reset", [
-                    'jenis_surat_id' => $jenisSurat->id,
-                    'jenis_surat_nama' => $jenisSurat->nama,
-                    'old_counter' => $oldCounter,
-                    'old_reset_month' => $oldResetMonth,
-                    'new_reset_month' => $currentMonth
-                ]);
-            }
-
-            if ($resetCount > 0) {
-                $this->info("Reset counters for {$resetCount} jenis surat to month {$currentMonth}.");
-                Log::info("System maintenance: Reset {$resetCount} counters for month {$currentMonth}");
-            } else {
-                $this->info('All counters are already up to date for current month.');
-            }
         } catch (\Exception $e) {
-            $this->error('Error handling monthly counter resets: ' . $e->getMessage());
-            Log::error('Error during counter reset maintenance', ['error' => $e->getMessage()]);
+            $this->error('Error checking counter system: ' . $e->getMessage());
+            Log::error('Counter system check failed', ['error' => $e->getMessage()]);
         }
     }
 

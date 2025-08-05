@@ -176,7 +176,6 @@ class SuratController extends Controller
                     ]);
                 }
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                // This should not happen anymore since we convert to PDF above
                 $extractionMethod = 'Word Parser (fallback)';
                 $extractedText = 'Word document processing - should have been converted to PDF.';
             }
@@ -184,7 +183,6 @@ class SuratController extends Controller
             // Check if file already contains a valid nomor surat
             $hasValidNomor = false;
             if (!empty($extractedText)) {
-                // Pattern untuk detect nomor surat yang sudah valid
                 $nomorPattern = '/\d{3}\/[A-Z]+\/[A-Z]+\/INTENS\/\d{2}\/\d{4}/';
                 if (preg_match($nomorPattern, $extractedText, $matches)) {
                     $hasValidNomor = true;
@@ -264,6 +262,7 @@ class SuratController extends Controller
         }
         
         if ($divisiId && $jenisSuratId && $nomorUrut) {
+            // Buat atau update lock (cleanup sudah dilakukan di getNextNomorUrut)
             \App\Models\NomorUrutLock::updateOrCreate([
                 'divisi_id' => $divisiId,
                 'jenis_surat_id' => $jenisSuratId,
@@ -271,6 +270,13 @@ class SuratController extends Controller
             ], [
                 'user_id' => \Auth::id(),
                 'locked_until' => now()->addMinutes(10),
+            ]);
+            
+            \Log::info('Lock created:', [
+                'user_id' => \Auth::id(),
+                'divisi_id' => $divisiId,
+                'jenis_surat_id' => $jenisSuratId,
+                'nomor_urut' => $nomorUrut
             ]);
         }
         
@@ -292,16 +298,16 @@ class SuratController extends Controller
     public function store(Request $request)
     {
         try {
-        $request->validate([
+            $request->validate([
                 'file_path' => 'required',
                 'file_size' => 'required|integer',
                 'mime_type' => 'required',
-            'nomor_urut' => 'required|integer',
-            'divisi_id' => 'required|exists:divisions,id',
-            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+                'nomor_urut' => 'required|integer',
+                'divisi_id' => 'required|exists:divisions,id',
+                'jenis_surat_id' => 'required|exists:jenis_surat,id',
                 'perihal' => 'required|string|max:255',
-            'tanggal_surat' => 'required|date',
-            'tanggal_diterima' => 'required|date',
+                'tanggal_surat' => 'required|date',
+                'tanggal_diterima' => 'required|date',
                 'is_private' => 'boolean',
                 'selected_users' => 'array',
                 'selected_users.*' => 'exists:users,id'
@@ -349,16 +355,16 @@ class SuratController extends Controller
         $request->validate([
             'file_path' => 'required',
             'file_size' => 'required|integer',
-                'mime_type' => 'required',
+            'mime_type' => 'required',
             'nomor_urut' => 'required|integer',
             'divisi_id' => 'required|exists:divisions,id',
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
-                'perihal' => 'required|string|max:255',
+            'perihal' => 'required|string|max:255',
             'tanggal_surat' => 'required|date',
             'tanggal_diterima' => 'required|date',
-                'is_private' => 'boolean',
-                'selected_users' => 'array',
-                'selected_users.*' => 'exists:users,id'
+            'is_private' => 'boolean',
+            'selected_users' => 'array',
+            'selected_users.*' => 'exists:users,id'
             ]);
 
             // Hapus lock nomor urut user ini (jika ada)
@@ -454,6 +460,15 @@ class SuratController extends Controller
             'uploaded_by' => Auth::id(),
         ]);
 
+            // NOW increment the counter in JenisSurat since letter is actually stored
+            $this->incrementNomorUrut($request->jenis_surat_id, $request->tanggal_surat);
+            
+            \Log::info('Letter successfully stored and counter incremented', [
+                'surat_id' => $surat->id,
+                'nomor_surat' => $nomorSurat,
+                'jenis_surat_id' => $request->jenis_surat_id
+            ]);
+
             // Handle private access
             if ($request->has('is_private') && $request->has('selected_users')) {
                 foreach ($request->selected_users as $userId) {
@@ -525,7 +540,7 @@ class SuratController extends Controller
             ]);
             
             // NOW increment the counter in JenisSurat since letter is actually stored
-            $this->incrementNomorUrut($request->jenis_surat_id);
+            $this->incrementNomorUrut($request->jenis_surat_id, $request->tanggal_surat);
             
             \Log::info('Letter successfully stored and counter incremented', [
                 'surat_id' => $surat->id,
@@ -1159,11 +1174,18 @@ class SuratController extends Controller
     }
 
     // Helper: Get next available nomor urut using counter system
-    public function getNextNomorUrut($divisiId, $jenisSuratId)
+    public function getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat = null)
     {
+        // Extract month-year from tanggal_surat, default to current month
+        $monthYear = $tanggalSurat ? 
+            \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
+            \Carbon\Carbon::now()->format('Y-m');
+            
         \Log::info('Getting next nomor urut (preview only):', [
             'divisi_id' => $divisiId,
-            'jenis_surat_id' => $jenisSuratId
+            'jenis_surat_id' => $jenisSuratId,
+            'tanggal_surat' => $tanggalSurat,
+            'month_year' => $monthYear
         ]);
         
         // Get jenis surat with counter
@@ -1174,14 +1196,28 @@ class SuratController extends Controller
         }
         
         // Peek next counter WITHOUT incrementing (for preview/lock purposes)
-        $nextCounter = $jenisSurat->peekNextCounter();
+        $nextCounter = $jenisSurat->peekNextCounter($monthYear);
         
         \Log::info('Next counter preview from jenis surat:', [
             'jenis_surat_id' => $jenisSuratId,
             'next_counter_preview' => $nextCounter,
-            'current_month' => \Carbon\Carbon::now()->format('Y-m'),
-            'last_reset_month' => $jenisSurat->last_reset_month
+            'target_month' => $monthYear
         ]);
+        
+        // Hapus lock lama user ini di divisi yang sama setelah update real-time
+        if (\Auth::check()) {
+            $deletedLocks = NomorUrutLock::where('user_id', \Auth::id())
+                ->where('divisi_id', $divisiId)
+                ->delete();
+                
+            if ($deletedLocks > 0) {
+                \Log::info('Cleaned up old locks after real-time update:', [
+                    'user_id' => \Auth::id(),
+                    'divisi_id' => $divisiId,
+                    'deleted_locks' => $deletedLocks
+                ]);
+            }
+        }
         
         return $nextCounter;
     }
@@ -1189,10 +1225,17 @@ class SuratController extends Controller
     /**
      * Actually increment the counter when finalizing the letter
      */
-    public function incrementNomorUrut($jenisSuratId)
+    public function incrementNomorUrut($jenisSuratId, $tanggalSurat = null)
     {
+        // Extract month-year from tanggal_surat, default to current month
+        $monthYear = $tanggalSurat ? 
+            \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
+            \Carbon\Carbon::now()->format('Y-m');
+            
         \Log::info('Incrementing nomor urut (final submit):', [
-            'jenis_surat_id' => $jenisSuratId
+            'jenis_surat_id' => $jenisSuratId,
+            'tanggal_surat' => $tanggalSurat,
+            'month_year' => $monthYear
         ]);
         
         $jenisSurat = JenisSurat::find($jenisSuratId);
@@ -1201,11 +1244,12 @@ class SuratController extends Controller
             return null;
         }
         
-        // Actually increment the counter
-        $finalCounter = $jenisSurat->incrementCounter();
+        // Actually increment the counter for the specific month
+        $finalCounter = $jenisSurat->incrementCounter($monthYear);
         
         \Log::info('Final counter incremented:', [
             'jenis_surat_id' => $jenisSuratId,
+            'month_year' => $monthYear,
             'final_counter' => $finalCounter
         ]);
         
@@ -1223,6 +1267,7 @@ class SuratController extends Controller
                 'user_id' => $userId
             ]);
             
+            // Buat atau update lock (cleanup sudah dilakukan di getNextNomorUrut)
             NomorUrutLock::updateOrCreate([
                 'divisi_id' => $divisiId,
                 'jenis_surat_id' => $jenisSuratId,

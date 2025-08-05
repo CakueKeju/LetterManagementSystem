@@ -68,17 +68,18 @@ class ResetSuratCounter extends Command
     {
         $currentMonth = Carbon::now()->format('Y-m');
         
-        if (!$force && $jenisSurat->last_reset_month === $currentMonth) {
-            $this->warn("Counter for {$jenisSurat->nama_jenis} already reset this month ({$currentMonth}). Use --force to reset anyway.");
-            return;
+        if (!$force) {
+            $currentCounter = $jenisSurat->getCurrentCounter($currentMonth);
+            if ($currentCounter === 0) {
+                $this->warn("Counter for {$jenisSurat->nama_jenis} is already 0 for month {$currentMonth}. Use --force to reset anyway.");
+                return;
+            }
         }
         
-        $oldCounter = $jenisSurat->counter;
-        $jenisSurat->counter = 0;
-        $jenisSurat->last_reset_month = $currentMonth;
-        $jenisSurat->save();
+        $oldCounter = $jenisSurat->getCurrentCounter($currentMonth);
+        $jenisSurat->resetCounter($currentMonth);
         
-        $this->line("Reset counter for {$jenisSurat->nama_jenis}: {$oldCounter} → 0");
+        $this->line("Reset counter for {$jenisSurat->nama_jenis} (month {$currentMonth}): {$oldCounter} → 0");
     }
     
     private function autoResetCounters()
@@ -88,13 +89,10 @@ class ResetSuratCounter extends Command
         $resetCount = 0;
         
         foreach ($jenisSuratList as $jenisSurat) {
-            if ($jenisSurat->last_reset_month !== $currentMonth) {
-                $oldCounter = $jenisSurat->counter;
-                $jenisSurat->counter = 0;
-                $jenisSurat->last_reset_month = $currentMonth;
-                $jenisSurat->save();
-                
-                $this->line("Auto-reset counter for {$jenisSurat->nama_jenis}: {$oldCounter} → 0");
+            $currentCounter = $jenisSurat->getCurrentCounter($currentMonth);
+            if ($currentCounter > 0) {
+                $jenisSurat->resetCounter($currentMonth);
+                $this->line("Auto-reset counter for {$jenisSurat->nama_jenis} (month {$currentMonth}): {$currentCounter} → 0");
                 $resetCount++;
             }
         }

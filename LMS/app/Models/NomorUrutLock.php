@@ -135,4 +135,17 @@ class NomorUrutLock extends Model
         
         return $updated;
     }
+    
+    public static function cleanupUserDuplicateLocks(int $userId, int $divisiId): int
+    {
+        $deleted = static::where('user_id', $userId)
+            ->where('divisi_id', $divisiId)
+            ->delete();
+            
+        if ($deleted > 0) {
+            Log::info("Cleaned up {$deleted} duplicate locks for user {$userId} in division {$divisiId}");
+        }
+        
+        return $deleted;
+    }
 }
