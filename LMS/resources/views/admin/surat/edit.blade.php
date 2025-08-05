@@ -43,7 +43,7 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="divisi_id" class="form-label">Divisi *</label>
-                                    <select class="form-control @error('divisi_id') is-invalid @enderror" id="divisi_id" name="divisi_id" required>
+                                    <select class="form-select @error('divisi_id') is-invalid @enderror" id="divisi_id" name="divisi_id" required>
                                         <option value="">Pilih Divisi</option>
                                         @foreach($divisions as $division)
                                             <option value="{{ $division->id }}" {{ old('divisi_id', $surat->divisi_id) == $division->id ? 'selected' : '' }}>
@@ -59,7 +59,7 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="jenis_surat_id" class="form-label">Jenis Surat *</label>
-                                    <select class="form-control @error('jenis_surat_id') is-invalid @enderror" id="jenis_surat_id" name="jenis_surat_id" required>
+                                    <select class="form-select @error('jenis_surat_id') is-invalid @enderror" id="jenis_surat_id" name="jenis_surat_id" required>
                                         <option value="">Pilih Jenis Surat</option>
                                         @foreach($jenisSurat as $jenis)
                                             <option value="{{ $jenis->id }}" {{ old('jenis_surat_id', $surat->jenis_surat_id) == $jenis->id ? 'selected' : '' }}>

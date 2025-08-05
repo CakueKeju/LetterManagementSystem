@@ -17,12 +17,12 @@
                 <div class="card-body">
                     <!-- Filters -->
                     <form method="GET" action="{{ route('admin.surat.index') }}" class="mb-4">
-                        <div class="row">
+                        <div class="row g-3">
                             <div class="col-md-3">
                                 <input type="text" name="search" class="form-control" placeholder="Cari surat..." value="{{ request('search') }}">
                             </div>
-                            <div class="col-md-2">
-                                <select name="divisi_id" class="form-control">
+                            <div class="col-md-3">
+                                <select name="divisi_id" class="form-select">
                                     <option value="">Semua Divisi</option>
                                     @foreach($divisions as $division)
                                         <option value="{{ $division->id }}" {{ request('divisi_id') == $division->id ? 'selected' : '' }}>
@@ -31,8 +31,8 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-2">
-                                <select name="jenis_surat_id" class="form-control">
+                            <div class="col-md-3">
+                                <select name="jenis_surat_id" class="form-select">
                                     <option value="">Semua Jenis</option>
                                     @foreach($jenisSurat as $jenis)
                                         <option value="{{ $jenis->id }}" {{ request('jenis_surat_id') == $jenis->id ? 'selected' : '' }}>
@@ -41,21 +41,26 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-2">
-                                <select name="is_private" class="form-control">
+                            <div class="col-md-3">
+                                <input type="date" name="tanggal_surat" class="form-control" placeholder="Tanggal Surat" value="{{ request('tanggal_surat') }}">
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-4">
+                                <select name="is_private" class="form-select">
                                     <option value="">Semua Status</option>
                                     <option value="1" {{ request('is_private') === '1' ? 'selected' : '' }}>Private</option>
                                     <option value="0" {{ request('is_private') === '0' ? 'selected' : '' }}>Public</option>
                                 </select>
                             </div>
-                            <div class="col-md-2">
-                                <select name="sort" class="form-control">
+                            <div class="col-md-4">
+                                <select name="sort" class="form-select">
                                     <option value="newest" {{ request('sort') == 'newest' ? 'selected' : '' }}>Terbaru</option>
                                     <option value="oldest" {{ request('sort') == 'oldest' ? 'selected' : '' }}>Terlama</option>
                                 </select>
                             </div>
-                            <div class="col-md-1">
-                                <button type="submit" class="btn btn-primary">
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary w-100">
                                     <i class="fas fa-search"></i> Filter
                                 </button>
                             </div>

@@ -68,6 +68,9 @@ class AdminController extends Controller
         if ($request->filled('is_private')) {
             $query->where('is_private', $request->is_private);
         }
+        if ($request->filled('tanggal_surat')) {
+            $query->whereDate('tanggal_surat', $request->tanggal_surat);
+        }
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
@@ -626,11 +629,16 @@ class AdminController extends Controller
 
         $division->update($request->all());
 
-        // Sync division members
-        if ($request->has('division_users')) {
-            $division->users()->sync($request->input('division_users'));
+        // Update division members for one-to-many relationship
+        if ($request->has('division_users') && is_array($request->input('division_users'))) {
+            // First, remove all users from this division
+            User::where('divisi_id', $division->id)->update(['divisi_id' => null]);
+            
+            // Then assign selected users to this division
+            User::whereIn('id', $request->input('division_users'))->update(['divisi_id' => $division->id]);
         } else {
-            $division->users()->sync([]);
+            // If no users selected, remove all users from this division
+            User::where('divisi_id', $division->id)->update(['divisi_id' => null]);
         }
 
         return redirect()->route('admin.divisions.index')->with('success', 'Divisi berhasil diperbarui!');

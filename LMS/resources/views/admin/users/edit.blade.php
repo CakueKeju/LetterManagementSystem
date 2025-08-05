@@ -56,7 +56,7 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="divisi_id" class="form-label">Divisi *</label>
-                                    <select class="form-control @error('divisi_id') is-invalid @enderror" id="divisi_id" name="divisi_id" required>
+                                    <select class="form-select @error('divisi_id') is-invalid @enderror" id="divisi_id" name="divisi_id" required>
                                         <option value="">Pilih Divisi</option>
                                         @foreach($divisions as $division)
                                             <option value="{{ $division->id }}" {{ old('divisi_id', $user->divisi_id) == $division->id ? 'selected' : '' }}>

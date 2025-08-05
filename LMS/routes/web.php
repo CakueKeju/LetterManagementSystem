@@ -11,7 +11,7 @@ Route::get('/', function () {
 
 Auth::routes(['reset' => false]);
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'active'])->group(function () {
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 
     // Surat routes
@@ -157,7 +157,7 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
             'cleaned_orphaned' => $orphanedCleaned,
             'message' => "Cleaned up {$expiredCleaned} expired and {$orphanedCleaned} orphaned locks"
         ]);
-    })->middleware('admin');
+    })->middleware(['active', 'admin']);
     
     Route::match(['GET', 'POST'], '/api/cancel-nomor-urut-lock', function () {
         $userId = \Auth::id();
@@ -224,7 +224,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/jenis-surat/reset-all-counters', [AdminController::class, 'resetAllCounters'])->name('jenis-surat.reset-all-counters');
 });
 
-Route::middleware(['auth', 'admin'])->group(function() {
+Route::middleware(['auth', 'active', 'admin'])->group(function() {
     Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'showUploadForm'])->name('admin.surat.upload');
     Route::post('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'handleUpload'])->name('admin.surat.handleUpload');
     Route::post('/admin/surat/store', [App\Http\Controllers\AdminController::class, 'store'])->name('admin.surat.store');

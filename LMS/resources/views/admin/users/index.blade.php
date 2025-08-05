@@ -27,7 +27,7 @@
                                 <input type="text" name="search" class="form-control" placeholder="Cari user..." value="{{ request('search') }}">
                             </div>
                             <div class="col-md-3">
-                                <select name="divisi_id" class="form-control">
+                                <select name="divisi_id" class="form-select">
                                     <option value="">Semua Divisi</option>
                                     @foreach($divisions as $division)
                                         <option value="{{ $division->id }}" {{ request('divisi_id') == $division->id ? 'selected' : '' }}>
@@ -37,7 +37,7 @@
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <select name="is_active" class="form-control">
+                                <select name="is_active" class="form-select">
                                     <option value="">Semua Status</option>
                                     <option value="1" {{ request('is_active') === '1' ? 'selected' : '' }}>Aktif</option>
                                     <option value="0" {{ request('is_active') === '0' ? 'selected' : '' }}>Tidak Aktif</option>
