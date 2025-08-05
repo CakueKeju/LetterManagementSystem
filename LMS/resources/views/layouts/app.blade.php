@@ -18,12 +18,6 @@
 
     <!-- Scripts -->
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
-    
-    <!-- Bootstrap JavaScript -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
-    
-    <!-- jQuery (if needed) -->
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
 </head>
 <body>
     <div id="app">
@@ -53,12 +47,12 @@
                             @endif
                         @else
                             <li class="nav-item dropdown">
-                                <a id="navbarDropdown" class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" v-pre>
+                                <a id="navbarDropdown" class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" style="pointer-events: auto !important; position: relative; z-index: 1050;">
                                     <i class="fas fa-user-circle me-1"></i>
                                     {{ Auth::user()->full_name ?? Auth::user()->name }}
                                 </a>
 
-                                <div class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                                <div class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown" style="z-index: 1051;">
                                     <div class="dropdown-header">
                                         <strong>{{ Auth::user()->full_name ?? Auth::user()->name }}</strong><br>
                                         <small class="text-muted">{{ Auth::user()->email }}</small>
@@ -85,5 +79,44 @@
             @yield('content')
         </main>
     </div>
+    
+    <!-- Bootstrap JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+    
+    <!-- jQuery (if needed) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    
+    <!-- Force Bootstrap dropdown initialization -->
+    <script>
+        // Wait for DOM and all scripts to load
+        window.addEventListener('load', function() {
+            console.log('Initializing dropdowns...');
+            
+            // Force reinitialize dropdowns
+            const dropdowns = document.querySelectorAll('[data-bs-toggle="dropdown"]');
+            dropdowns.forEach(function(dropdown) {
+                console.log('Found dropdown:', dropdown);
+                
+                // Remove existing instances
+                const existingInstance = bootstrap.Dropdown.getInstance(dropdown);
+                if (existingInstance) {
+                    existingInstance.dispose();
+                }
+                
+                // Create new instance
+                new bootstrap.Dropdown(dropdown);
+                
+                // Add click event listener as fallback
+                dropdown.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Dropdown clicked');
+                    const instance = bootstrap.Dropdown.getInstance(this);
+                    if (instance) {
+                        instance.toggle();
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>

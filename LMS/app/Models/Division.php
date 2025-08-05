@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Builder;
 
 class Division extends Model
 {
@@ -16,30 +18,27 @@ class Division extends Model
         'nama_divisi',
     ];
 
-    // Relationships
-    public function users()
+    public function users(): HasMany
     {
         return $this->hasMany(User::class, 'divisi_id');
     }
 
-    public function surat()
+    public function surat(): HasMany
     {
         return $this->hasMany(Surat::class, 'divisi_id');
     }
 
-    public function jenisSurat()
+    public function jenisSurat(): HasMany
     {
         return $this->hasMany(JenisSurat::class, 'divisi_id');
     }
 
-    // Scopes
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query;
     }
 
-    // Helper methods
-    public function getNextNomorUrut()
+    public function getNextNomorUrut(): int
     {
         $lastSurat = $this->surat()
             ->orderBy('nomor_urut', 'desc')

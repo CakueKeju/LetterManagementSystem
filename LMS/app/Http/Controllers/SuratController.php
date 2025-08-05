@@ -15,9 +15,12 @@ use PhpOffice\PhpWord\IOFactory;
 use App\Models\NomorUrutLock;
 use PhpOffice\PhpWord\TemplateProcessor;
 use setasign\Fpdi\Fpdi;
+use App\Traits\DocumentProcessor;
 
 class SuratController extends Controller
 {
+    use DocumentProcessor;
+
     // Show the upload form
     public function showUploadForm()
     {
@@ -82,6 +85,45 @@ class SuratController extends Controller
                 'file_size' => Storage::size($filePath)
             ]);
 
+            // Convert DOCX to PDF immediately after upload using LibreOffice
+            if (in_array($fileExtension, ['doc', 'docx'])) {
+                \Log::info('Converting Word document to PDF using LibreOffice');
+                $fullPath = storage_path('app/' . $filePath);
+                
+                // Convert to PDF using LibreOffice
+                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
+                
+                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
+                    // Replace the original file with PDF version
+                    $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
+                    $newFilePath = 'letters/' . $pdfDescriptiveName;
+                    
+                    // Store the converted PDF
+                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
+                    
+                    // Delete the temporary converted file
+                    unlink($convertedPdfPath);
+                    
+                    // Delete the original Word file
+                    Storage::delete($filePath);
+                    
+                    // Update variables to use the PDF version
+                    $filePath = $newFilePath;
+                    $fileExtension = 'pdf';
+                    $mimeType = 'application/pdf';
+                    $fileSize = Storage::size($filePath);
+                    
+                    \Log::info('Word document successfully converted to PDF using LibreOffice:', [
+                        'original_extension' => pathinfo($originalName, PATHINFO_EXTENSION),
+                        'new_file_path' => $filePath,
+                        'new_file_size' => $fileSize
+                    ]);
+                } else {
+                    \Log::error('Failed to convert Word document to PDF using LibreOffice, keeping original file');
+                    // Keep the original DOCX file - we'll handle it differently in preview
+                }
+            }
+
             // Check for duplicate nomor urut
             $user = Auth::user();
             $nextNomorUrut = $this->getNextNomorUrut($user->divisi_id, $jenisSuratId);
@@ -113,6 +155,7 @@ class SuratController extends Controller
             $extractionMethod = '';
         $ocrError = null;
         
+        // Since we now convert all Word documents to PDF, we only need to handle PDF files
             if ($fileExtension === 'pdf') {
         try {
                     $extractionMethod = 'PDF Parser';
@@ -133,27 +176,9 @@ class SuratController extends Controller
                     ]);
                 }
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                try {
-                    $extractionMethod = 'Word Parser';
-                    $fullPath = storage_path('app/' . $filePath);
-                    \Log::info('Extracting Word text from: ' . $fullPath);
-                    $phpWord = IOFactory::load($fullPath);
-                    foreach ($phpWord->getSections() as $section) {
-                        foreach ($section->getElements() as $element) {
-                            if (method_exists($element, 'getText')) {
-                                $extractedText .= $element->getText() . ' ';
-                            }
-                        }
-                    }
-                    \Log::info('Word text extracted successfully, length: ' . strlen($extractedText));
-                } catch (\Exception $e) {
-                    $ocrError = 'Error ekstraksi teks (Word Parser): ' . $e->getMessage();
-                    \Log::warning('Failed to extract text from Word document: ' . $e->getMessage(), [
-                        'file_path' => $filePath,
-                        'full_path' => storage_path('app/' . $filePath),
-                        'exists' => file_exists(storage_path('app/' . $filePath))
-                    ]);
-                }
+                // This should not happen anymore since we convert to PDF above
+                $extractionMethod = 'Word Parser (fallback)';
+                $extractedText = 'Word document processing - should have been converted to PDF.';
             }
 
             // Check if file already contains a valid nomor surat
@@ -342,6 +367,12 @@ class SuratController extends Controller
                 ->where('nomor_urut', $request->nomor_urut)
                 ->where('user_id', Auth::id())
                 ->delete();
+                
+            // Trigger immediate cleanup of expired locks
+            $expiredCleaned = NomorUrutLock::cleanupExpiredLocks();
+            if ($expiredCleaned > 0) {
+                \Log::info("Cleaned up {$expiredCleaned} expired locks during finalStore");
+            }
 
         // Cek duplikasi nomor urut
             if (Surat::where('nomor_urut', $request->nomor_urut)
@@ -377,21 +408,37 @@ class SuratController extends Controller
             ]);
             
             $filledFilePath = null;
+            $finalMimeType = $request->mime_type;
+            $finalFileSize = $request->file_size;
+            
             if ($fileExtension === 'pdf') {
                 $filledFilePath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                $filledFilePath = $this->fillWordWithNomorSurat($storagePath, $nomorSurat);
+                // Convert Word to PDF
+                $filledFilePath = $this->fillWordWithNomorSuratAndConvertToPdf($storagePath, $nomorSurat);
+                if ($filledFilePath) {
+                    $finalMimeType = 'application/pdf'; // Update mime type to PDF
+                    $finalFileSize = filesize($filledFilePath); // Update file size
+                }
             }
 
             // Jika berhasil fill, gunakan file yang sudah diisi
             if ($filledFilePath && file_exists($filledFilePath)) {
-                // Convert absolute path back to relative path for storage
-                $relativePath = str_replace(storage_path('app/'), '', $filledFilePath);
-                $filePath = str_replace('\\', '/', $relativePath);
-                \Log::info('Using filled file: ' . $filePath);
+                // Store the filled file in Laravel storage
+                $filledStoragePath = 'letters/filled_' . uniqid() . '.pdf';
+                \Illuminate\Support\Facades\Storage::put($filledStoragePath, file_get_contents($filledFilePath));
+                
+                // Clean up temporary file
+                unlink($filledFilePath);
+                
+                // Update file path and size
+                $filePath = $filledStoragePath;
+                $finalFileSize = \Illuminate\Support\Facades\Storage::size($filePath);
+                
+                \Log::info('Using filled and converted file: ' . $filePath);
             }
 
-            // Create surat record
+        // Create surat record
         $surat = Surat::create([
                 'nomor_urut' => $request->nomor_urut,
                 'nomor_surat' => $nomorSurat,
@@ -401,8 +448,8 @@ class SuratController extends Controller
                 'tanggal_surat' => $request->tanggal_surat,
                 'tanggal_diterima' => $request->tanggal_diterima,
                 'file_path' => $filePath,
-                'file_size' => $request->file_size,
-                'mime_type' => $request->mime_type,
+                'file_size' => $finalFileSize,
+                'mime_type' => $finalMimeType,
                 'is_private' => $request->has('is_private'),
             'uploaded_by' => Auth::id(),
         ]);
@@ -427,386 +474,83 @@ class SuratController extends Controller
         }
     }
 
-    /**
-     * Fill PDF with nomor surat by detecting and replacing placeholder text
-     */
-    private function fillPdfWithNomorSurat($pdfPath, $nomorSurat)
+    // Store directly from preview (when file already has valid nomor surat)
+    public function storeFromPreview(Request $request)
     {
         try {
-            \Log::info('Starting PDF fill process:', [
-                'pdf_path' => $pdfPath,
-                'nomor_surat' => $nomorSurat,
-                'file_exists' => file_exists($pdfPath)
+            $request->validate([
+                'file_path' => 'required',
+                'file_size' => 'required|integer',
+                'mime_type' => 'required',
+                'nomor_urut' => 'required|integer',
+                'divisi_id' => 'required|exists:divisions,id',
+                'jenis_surat_id' => 'required|exists:jenis_surat,id',
+                'perihal' => 'required|string|max:255',
+                'tanggal_surat' => 'required|date',
+                'tanggal_diterima' => 'required|date',
+                'is_private' => 'boolean'
             ]);
-            
-            // Parse PDF untuk detect text dan koordinat
-            $parser = new Parser();
-            $pdf = $parser->parseFile($pdfPath);
-            
-            \Log::info('PDF parsed successfully, pages count: ' . count($pdf->getPages()));
-            
-            // Cari text yang mengandung placeholder - lebih fleksibel
-            $placeholderPatterns = [
-                // Pattern dengan "Nomor:"
-                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                'Nomor:\s*\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                'Nomor:\s*\.\.\.\.\./\.\.\.\.\.',
-                'Nomor:\s*\.\.\.\.\.',
-                // Pattern tanpa "Nomor:"
-                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                '\.\.\.\.\./\.\.\.\.\./\.\.\.\.\.',
-                '\.\.\.\.\./\.\.\.\.\.',
-                '\.\.\.\.\.',
-                // Pattern dengan variasi dots
-                '\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\./\.\.\.\.',
-                '\.\.\./\.\.\./\.\.\./\.\.\./\.\.\./\.\.\.',
-                '\.\./\.\./\.\./\.\./\.\./\.\.',
-                '\./\./\./\./\./\.',
-                // Pattern dengan underscore atau dash
-                '_____/_____/_____/_____/_____/_____',
-                '-----/-----/-----/-----/-----/-----',
-                '____/____/____/____/____/____',
-                '----/----/----/----/----/----',
-                // Pattern dengan spasi
-                '\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\. /\.\.\.\.\.',
-                '\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\. /\.\.\.\.',
-            ];
-            
-            $foundPlaceholder = false;
-            $replacementData = [];
-            $allText = '';
-            
-            foreach ($pdf->getPages() as $pageIndex => $page) {
-                $text = $page->getText();
-                $allText .= $text . ' ';
-                \Log::info('Page ' . $pageIndex . ' text length: ' . strlen($text));
-                
-                foreach ($placeholderPatterns as $pattern) {
-                    if (preg_match('/' . $pattern . '/i', $text, $matches)) {
-                        $foundPlaceholder = true;
-                        $matchedText = $matches[0];
-                        
-                        \Log::info('Placeholder ditemukan:', [
-                            'pattern' => $pattern,
-                            'matched_text' => $matchedText,
-                            'nomor_surat' => $nomorSurat,
-                            'page' => $pageIndex
-                        ]);
-                        
-                        // Extract font info dan koordinat dari page
-                        $fontInfo = $this->extractFontInfo($page);
-                        
-                        $replacementData[] = [
-                            'page' => $pageIndex,
-                            'pattern' => $pattern,
-                            'matched_text' => $matchedText,
-                            'replacement' => $nomorSurat,
-                            'font_info' => $fontInfo,
-                            'position' => [
-                                'x' => 50, // Default position
-                                'y' => 50,
-                                'width' => strlen($nomorSurat) * 6, // Approximate width
-                                'height' => 12
-                            ]
-                        ];
-                        
-                        break 2; // Hanya replace yang pertama ditemukan
-                    }
-                }
-            }
-            
-            // Buat PDF baru dengan replacement (atau copy asli jika tidak ada placeholder)
-            $result = $this->createFilledPdf($pdfPath, $replacementData);
-            \Log::info('PDF fill result: ' . ($result ? $result : 'null'));
-            
-            if (!$foundPlaceholder) {
-                \Log::warning('Placeholder text tidak ditemukan di PDF: ' . $pdfPath);
-                \Log::info('Text yang ada di PDF (first 500 chars):', ['text' => substr($allText, 0, 500)]);
-                // Return file yang sudah di-copy meskipun tidak ada placeholder
-                return $result;
-            }
-            
-            return $result;
-            
-        } catch (\Exception $e) {
-            \Log::error('Error filling PDF: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return null;
-        }
-    }
-    
-    /**
-     * Extract font information from PDF page
-     */
-    private function extractFontInfo($page)
-    {
-        try {
-            // Coba extract font info dari page content
-            $content = $page->getText();
-            
-            // Default font info jika tidak bisa detect
-            return [
-                'font_name' => 'Helvetica',
-                'font_size' => 12,
-                'font_color' => [0, 0, 0] // Black
-            ];
-        } catch (\Exception $e) {
-            \Log::warning('Tidak bisa extract font info: ' . $e->getMessage());
-            return [
-                'font_name' => 'Helvetica',
-                'font_size' => 12,
-                'font_color' => [0, 0, 0]
-            ];
-        }
-    }
-    
-    /**
-     * Create filled PDF with nomor surat replacement
-     */
-    private function createFilledPdf($originalPath, $replacementData)
-    {
-        try {
-            \Log::info('Creating filled PDF:', [
-                'original_path' => $originalPath,
-                'replacement_count' => count($replacementData)
-            ]);
-            
-            // Buat temporary file untuk hasil
-            $tempPath = storage_path('app/temp_filled_pdf_' . uniqid() . '.pdf');
-            
-            if (empty($replacementData)) {
-                // Jika tidak ada replacement data, copy file asli
-                if (copy($originalPath, $tempPath)) {
-                    \Log::info('PDF copied to temp location (no replacements): ' . $tempPath);
-                    return $tempPath;
-                } else {
-                    \Log::error('Failed to copy PDF to temp location');
-                    return null;
-                }
-            }
-            
-            // Implementasi pengisian PDF menggunakan FPDI - Approach yang lebih sederhana
-            try {
-                // Import FPDI dan FPDF
-                $pdf = new \setasign\Fpdi\Fpdi();
-                
-                // Set document properties
-                $pdf->SetCreator('LMS System');
-                $pdf->SetAuthor('LMS System');
-                $pdf->SetTitle('Filled Document');
-                
-                // Get page count from original PDF
-                $pageCount = $pdf->setSourceFile($originalPath);
-                \Log::info('Original PDF has ' . $pageCount . ' pages');
-                
-                // Process each page
-                for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-                    // Import page
-                    $templateId = $pdf->importPage($pageNo);
-                    $size = $pdf->getTemplateSize($templateId);
-                    $pdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
-                    $pdf->useTemplate($templateId);
-                    
-                    // Apply replacements for this page
-                    foreach ($replacementData as $replacement) {
-                        if ($replacement['page'] == ($pageNo - 1)) { // PDF pages are 0-indexed
-                            \Log::info('Applying replacement on page ' . $pageNo . ': ' . $replacement['replacement']);
-                            
-                            // Set font properties
-                            $pdf->SetFont('Arial', '', 12);
-                            $pdf->SetTextColor(0, 0, 0);
-                            
-                            // Use position from replacement data if available
-                            $x = $replacement['position']['x'] ?? 50;
-                            $y = $replacement['position']['y'] ?? 50;
-                            
-                            // Add text overlay
-                            $pdf->SetXY($x, $y);
-                            $pdf->Write(0, $replacement['replacement']);
-                            
-                            \Log::info('Text added at position: x=' . $x . ', y=' . $y . ', text: ' . $replacement['replacement']);
-                        }
-                    }
-                }
-                
-                // Save the filled PDF
-                $pdf->Output($tempPath, 'F');
-                
-                if (file_exists($tempPath)) {
-                    \Log::info('Filled PDF created successfully: ' . $tempPath);
-                    // Set proper permissions
-                    chmod($tempPath, 0644);
-                    return $tempPath;
-                } else {
-                    \Log::error('Failed to create filled PDF');
-                    return null;
-                }
-                
-            } catch (\Exception $e) {
-                \Log::error('Error with FPDI: ' . $e->getMessage(), [
-                    'trace' => $e->getTraceAsString()
-                ]);
-                
-                // Fallback: create simple PDF with text overlay
-                try {
-                    \Log::info('Trying fallback approach: create simple PDF with text');
-                    $pdf = new \setasign\Fpdi\Fpdi();
-                    $pdf->SetCreator('LMS System');
-                    $pdf->SetAuthor('LMS System');
-                    $pdf->SetTitle('Filled Document');
-                    
-                    // Add a page
-                    $pdf->AddPage();
-                    
-                    // Add text
-                    $pdf->SetFont('Arial', '', 12);
-                    $pdf->SetTextColor(0, 0, 0);
-                    $pdf->SetXY(50, 50);
-                    
-                    foreach ($replacementData as $replacement) {
-                        $pdf->Write(0, 'Nomor Surat: ' . $replacement['replacement']);
-                        break; // Only use first replacement
-                    }
-                    
-                    $pdf->Output($tempPath, 'F');
-                    
-                    if (file_exists($tempPath)) {
-                        \Log::info('Fallback PDF created successfully: ' . $tempPath);
-                        // Set proper permissions
-                        chmod($tempPath, 0644);
-                        return $tempPath;
-                    }
-                } catch (\Exception $fallbackError) {
-                    \Log::error('Fallback also failed: ' . $fallbackError->getMessage());
-                }
-                
-                // Final fallback: copy original file
-                if (copy($originalPath, $tempPath)) {
-                    \Log::info('Final fallback: PDF copied to temp location: ' . $tempPath);
-                    return $tempPath;
-                } else {
-                    \Log::error('Final fallback failed: Could not copy PDF');
-                    return null;
-                }
-            }
-            
-        } catch (\Exception $e) {
-            \Log::error('Error creating filled PDF: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return null;
-        }
-    }
 
-    /**
-     * Fill Word document with nomor surat by detecting and replacing placeholder text
-     */
-    private function fillWordWithNomorSurat($wordPath, $nomorSurat)
-    {
-        try {
-            \Log::info('Starting Word fill process:', [
-                'word_path' => $wordPath,
+            // Check for duplicate nomor urut
+            if (Surat::where('nomor_urut', $request->nomor_urut)
+                ->where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->exists()) {
+                return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini.'])->withInput();
+            }
+
+            // Generate nomor surat
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+                $request->nomor_urut,
+                Division::find($request->divisi_id)->kode_divisi,
+                JenisSurat::find($request->jenis_surat_id)->kode_jenis,
+                date('m', strtotime($request->tanggal_surat)),
+                date('Y', strtotime($request->tanggal_surat))
+            );
+
+            // Create surat record
+            $surat = Surat::create([
+                'nomor_urut' => $request->nomor_urut,
                 'nomor_surat' => $nomorSurat,
-                'file_exists' => file_exists($wordPath)
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'perihal' => $request->perihal,
+                'tanggal_surat' => $request->tanggal_surat,
+                'tanggal_diterima' => $request->tanggal_diterima,
+                'file_path' => $request->file_path,
+                'file_size' => $request->file_size,
+                'mime_type' => $request->mime_type,
+                'is_private' => $request->has('is_private'),
+                'uploaded_by' => Auth::id(),
             ]);
             
-            // Load Word document
-            $phpWord = IOFactory::load($wordPath);
+            // NOW increment the counter in JenisSurat since letter is actually stored
+            $this->incrementNomorUrut($request->jenis_surat_id);
             
-            // Cari text yang mengandung placeholder - lebih fleksibel
-            $placeholderPatterns = [
-                // Pattern dengan "Nomor:"
-                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/Nomor:\s*\.\.\.\.\.\/\.\.\.\.\./i',
-                '/Nomor:\s*\.\.\.\.\./i',
-                // Pattern tanpa "Nomor:"
-                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/\.\.\.\.\.\/\.\.\.\.\./i',
-                '/\.\.\.\.\./i',
-                // Pattern dengan variasi dots
-                '/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\.\/\.\.\.\./i',
-                '/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\./i',
-                '/\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/\.\./i',
-                '/\.\/\.\/\.\/\.\/\.\/\./i',
-                // Pattern dengan underscore atau dash
-                '/_____\/_____\/_____\/_____\/_____\/_____/i',
-                '/-----\/-----\/-----\/-----\/-----\/-----/i',
-                '/____\/____\/____\/____\/____\/____/i',
-                '/----\/----\/----\/----\/----\/----/i',
-                // Pattern dengan spasi
-                '/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\. \/\.\.\.\.\./i',
-                '/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\. \/\.\.\.\./i',
-            ];
+            \Log::info('Letter successfully stored and counter incremented', [
+                'surat_id' => $surat->id,
+                'nomor_surat' => $nomorSurat,
+                'jenis_surat_id' => $request->jenis_surat_id
+            ]);
             
-            $foundPlaceholder = false;
-            $replacementData = [];
-            
-            // Iterate through all sections
-            foreach ($phpWord->getSections() as $section) {
-                // Iterate through all elements in the section
-                foreach ($section->getElements() as $element) {
-                    if (method_exists($element, 'getText')) {
-                        $text = $element->getText();
-                        
-                        foreach ($placeholderPatterns as $pattern) {
-                            if (preg_match($pattern, $text, $matches)) {
-                                $foundPlaceholder = true;
-                                $matchedText = $matches[0];
-                                
-                                \Log::info('Word Placeholder ditemukan:', [
-                                    'pattern' => $pattern,
-                                    'matched_text' => $matchedText,
-                                    'nomor_surat' => $nomorSurat
-                                ]);
-                                
-                                // Replace text in the element
-                                $newText = preg_replace($pattern, $nomorSurat, $text);
-                                $element->setText($newText);
-                                
-                                $replacementData[] = [
-                                    'original_text' => $matchedText,
-                                    'replacement' => $nomorSurat,
-                                    'new_text' => $newText
-                                ];
-                                
-                                break 2; // Hanya replace yang pertama ditemukan
-                            }
-                        }
-                    }
-                }
+            // Cleanup expired locks and any locks for this combination
+            NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $request->nomor_urut)
+                ->delete();
+                
+            $expiredCleaned = NomorUrutLock::cleanupExpiredLocks();
+            if ($expiredCleaned > 0) {
+                \Log::info("Cleaned up {$expiredCleaned} expired locks during storeFromPreview");
             }
-            
-            // Save the modified Word document
-            $tempPath = storage_path('app/temp_filled_word_' . uniqid() . '.docx');
-            $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
-            $objWriter->save($tempPath);
-            
-            \Log::info('Word document processed: ' . $tempPath);
-            
-            if (!$foundPlaceholder) {
-                \Log::warning('Placeholder text tidak ditemukan di Word document: ' . $wordPath);
-                // Return file yang sudah di-save meskipun tidak ada placeholder
-                return $tempPath;
-            }
-            
-            return $tempPath;
-            
+
+            return redirect()->route('home')->with('success', 'Surat berhasil disimpan dengan nomor: ' . $nomorSurat);
+
         } catch (\Exception $e) {
-            \Log::error('Error filling Word document: ' . $e->getMessage(), [
+            \Log::error('Error in storeFromPreview method: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
-            return null;
+            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
         }
     }
 
@@ -988,18 +732,86 @@ class SuratController extends Controller
     // Helper method to extract date from text
     private function extractDateFromText($text)
     {
-        // Look for various date patterns
+        if (!$text) {
+            return date('Y-m-d');
+        }
+
+        // First, try to extract date patterns starting with "Pada tanggal"
+        $padaTanggalPattern = '/Pada\s+tanggal\s+([^,\.!?]+?)(?:\s+(?:kami|dengan|telah|adalah|yang))?\s*(?:[,\.!?]|$)/i';
+        if (preg_match($padaTanggalPattern, $text, $matches)) {
+            $dateText = trim($matches[1]);
+            \Log::info('Found "Pada tanggal" pattern: ' . $dateText);
+            
+            // Try to parse this specific date text
+            $parsedDate = $this->parseIndonesianDate($dateText);
+            if ($parsedDate) {
+                return $parsedDate;
+            }
+        }
+
+        // Look for various date patterns - ordered from most specific to least specific
         $patterns = [
             '/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/', // DD/MM/YYYY or DD-MM-YYYY
             '/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/', // YYYY/MM/DD or YYYY-MM-DD
             '/(\d{1,2}\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4})/i', // DD Month YYYY
+            
+            // Most specific: Complete Indonesian written dates (Day + Month + Year)
+            '/((?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|dua\s+belas|tiga\s+belas|empat\s+belas|lima\s+belas|enam\s+belas|tujuh\s+belas|delapan\s+belas|sembilan\s+belas|dua\s+puluh|dua\s+puluh\s+satu|dua\s+puluh\s+dua|dua\s+puluh\s+tiga|dua\s+puluh\s+empat|dua\s+puluh\s+lima|dua\s+puluh\s+enam|dua\s+puluh\s+tujuh|dua\s+puluh\s+delapan|dua\s+puluh\s+sembilan|tiga\s+puluh|tiga\s+puluh\s+satu|\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(dua\s+ribu[^,\.!?]*?)(?:\s+(?:dengan|kami|yang|telah))?[,\.!?\s])/i', // Indonesian written dates
+            
+            // Less specific: Month + Year only 
+            '/(?:bulan\s+)?(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(dua\s+ribu(?:\s+(?!kami|dengan|yang|telah)[a-z]+)*|\d{4})/i', // Month + Year only
+            
+            // Least specific: Year only (written)
+            '/(?:tahun\s+)?(dua\s+ribu\s+(?:dua\s+puluh\s+)?(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan))/i', // Year only (written)
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $matches)) {
                 $dateStr = $matches[1];
+                \Log::info('Found date pattern: ' . $dateStr);
                 
-                // Try different date formats
+                // Check if this is an Indonesian written date (complete or partial)
+                if (preg_match('/((?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|dua\s+belas|tiga\s+belas|empat\s+belas|lima\s+belas|enam\s+belas|tujuh\s+belas|delapan\s+belas|sembilan\s+belas|dua\s+puluh|dua\s+puluh\s+satu|dua\s+puluh\s+dua|dua\s+puluh\s+tiga|dua\s+puluh\s+empat|dua\s+puluh\s+lima|dua\s+puluh\s+enam|dua\s+puluh\s+tujuh|dua\s+puluh\s+delapan|dua\s+puluh\s+sembilan|tiga\s+puluh|tiga\s+puluh\s+satu|\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+((?:satu\s+ribu\s+sembilan\s+ratus|dua\s+ribu|dua\s+ribu\s+[a-z\s]+|\d{4})))/i', $dateStr)) {
+                    $parsedDate = $this->parseIndonesianDate($dateStr);
+                    if ($parsedDate) {
+                        return $parsedDate;
+                    }
+                }
+                
+                // Check for month + year only patterns
+                if (preg_match('/(?:bulan\s+)?(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(dua\s+ribu\s+[a-z\s]+|\d{4})/i', $dateStr, $monthYearMatches)) {
+                    $monthMap = [
+                        'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
+                        'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8,
+                        'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12
+                    ];
+                    $month = $monthMap[strtolower($monthYearMatches[1])];
+                    $yearText = $monthYearMatches[2];
+                    
+                    // Parse year
+                    $year = null;
+                    if (is_numeric($yearText)) {
+                        $year = (int)$yearText;
+                    } else {
+                        $year = $this->parseIndonesianYear($yearText);
+                    }
+                    
+                    if ($year && $month) {
+                        \Log::info("Parsed month+year: $month/$year");
+                        return sprintf('%04d-%02d-01', $year, $month); // Default to 1st of month
+                    }
+                }
+                
+                // Check for year only patterns
+                if (preg_match('/(?:tahun\s+)?(dua\s+ribu\s+(?:dua\s+puluh\s+)?(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan))/i', $dateStr, $yearMatches)) {
+                    $year = $this->parseIndonesianYear($yearMatches[1]);
+                    if ($year) {
+                        \Log::info("Parsed year only: $year");
+                        return sprintf('%04d-01-01', $year); // Default to January 1st
+                    }
+                }
+                
+                // Try different date formats for numeric dates
                 $formats = ['d/m/Y', 'd-m-Y', 'Y/m/d', 'Y-m-d'];
                 foreach ($formats as $format) {
                     $date = \DateTime::createFromFormat($format, $dateStr);
@@ -1008,7 +820,7 @@ class SuratController extends Controller
                     }
                 }
                 
-                // Handle Indonesian month names
+                // Handle Indonesian month names with numeric day and year
                 if (preg_match('/(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i', $dateStr, $monthMatches)) {
                     $monthMap = [
                         'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
@@ -1022,6 +834,276 @@ class SuratController extends Controller
         }
         
         return date('Y-m-d'); // Default to today if no date found
+    }
+
+    private function parseIndonesianDate($dateText)
+    {
+        $dateText = strtolower(trim($dateText));
+        \Log::info('Parsing Indonesian date: ' . $dateText);
+        
+        // Clean up extra words that might interfere
+        $cleanText = preg_replace('/\b(kami|mengundang|dengan|ini|yang|lalu|telah|dilaksanakan|adalah|hari|penting|dalam|teks|senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/i', '', $dateText);
+        $cleanText = trim(preg_replace('/\s+/', ' ', $cleanText));
+        \Log::info('Cleaned text: ' . $cleanText);
+        
+        // Indonesian number to digit mapping
+        $numberMap = [
+            'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
+            'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
+            'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
+            'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
+            'sembilan belas' => 19, 'dua puluh' => 20, 'dua puluh satu' => 21, 'dua puluh dua' => 22,
+            'dua puluh tiga' => 23, 'dua puluh empat' => 24, 'dua puluh lima' => 25,
+            'dua puluh enam' => 26, 'dua puluh tujuh' => 27, 'dua puluh delapan' => 28,
+            'dua puluh sembilan' => 29, 'tiga puluh' => 30, 'tiga puluh satu' => 31
+        ];
+
+        $monthMap = [
+            'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
+            'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8,
+            'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12
+        ];
+
+        $day = null;
+        $month = null;
+        $year = null;
+
+        // Split into words for analysis
+        $words = explode(' ', $cleanText);
+        
+        // First, find the month (most reliable anchor)
+        $monthIndex = -1;
+        foreach ($words as $i => $word) {
+            if (isset($monthMap[$word])) {
+                $month = $monthMap[$word];
+                $monthIndex = $i;
+                \Log::info("Found month: $word = $month at position $i");
+                break;
+            }
+        }
+        
+        // If we have a month, look for day before it and year after it
+        if ($month !== null && $monthIndex >= 0) {
+            // Look for day before month (1-4 words before)
+            for ($i = max(0, $monthIndex - 4); $i < $monthIndex; $i++) {
+                $dayCandidate = $this->parseIndonesianDayFromWords($words, $i);
+                if ($dayCandidate && $dayCandidate >= 1 && $dayCandidate <= 31) {
+                    $day = $dayCandidate;
+                    \Log::info("Found day: $day");
+                    break;
+                }
+            }
+            
+            // Look for year after month
+            for ($i = $monthIndex + 1; $i < count($words); $i++) {
+                $yearCandidate = $this->parseIndonesianYearFromWords($words, $i);
+                if ($yearCandidate && $yearCandidate >= 1900 && $yearCandidate <= 2100) {
+                    $year = $yearCandidate;
+                    \Log::info("Found year: $year");
+                    break;
+                }
+            }
+        }
+        
+        // If no month found, try to find just a year
+        if ($month === null) {
+            foreach ($words as $i => $word) {
+                $yearCandidate = $this->parseIndonesianYearFromWords($words, $i);
+                if ($yearCandidate && $yearCandidate >= 1900 && $yearCandidate <= 2100) {
+                    $year = $yearCandidate;
+                    \Log::info("Found standalone year: $year");
+                    break;
+                }
+            }
+        }
+        
+        \Log::info("Final parsed components - Day: $day, Month: $month, Year: $year");
+        
+        // Return date in flexible format - use defaults for missing parts
+        if ($year) {
+            $finalDay = $day ?: 1; // Default to 1st if no day
+            $finalMonth = $month ?: 1; // Default to January if no month
+            
+            // Validate ranges
+            if ($finalDay >= 1 && $finalDay <= 31 && $finalMonth >= 1 && $finalMonth <= 12) {
+                $result = sprintf('%04d-%02d-%02d', $year, $finalMonth, $finalDay);
+                \Log::info("Returning flexible date: $result");
+                return $result;
+            }
+        }
+        
+        return null;
+    }
+
+    private function parseIndonesianDayFromWords($words, $startIndex)
+    {
+        if (!isset($words[$startIndex])) return null;
+        
+        $numberMap = [
+            'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
+            'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
+            'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
+            'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
+            'sembilan belas' => 19, 'dua puluh' => 20, 'dua puluh satu' => 21, 'dua puluh dua' => 22,
+            'dua puluh tiga' => 23, 'dua puluh empat' => 24, 'dua puluh lima' => 25,
+            'dua puluh enam' => 26, 'dua puluh tujuh' => 27, 'dua puluh delapan' => 28,
+            'dua puluh sembilan' => 29, 'tiga puluh' => 30, 'tiga puluh satu' => 31
+        ];
+        
+        // Check if it's a simple numeric day
+        if (is_numeric($words[$startIndex])) {
+            $day = (int)$words[$startIndex];
+            return ($day >= 1 && $day <= 31) ? $day : null;
+        }
+        
+        // Try compound phrases like "dua puluh tiga"
+        for ($len = 3; $len >= 1; $len--) {
+            if ($startIndex + $len - 1 < count($words)) {
+                $phrase = implode(' ', array_slice($words, $startIndex, $len));
+                if (isset($numberMap[$phrase])) {
+                    return $numberMap[$phrase];
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    private function parseIndonesianYearFromWords($words, $startIndex)
+    {
+        if (!isset($words[$startIndex])) return null;
+        
+        // Check if it's a simple numeric year
+        if (is_numeric($words[$startIndex])) {
+            $year = (int)$words[$startIndex];
+            return ($year >= 1900 && $year <= 2100) ? $year : null;
+        }
+        
+        // Try to parse written year like "dua ribu dua puluh empat"
+        $yearText = '';
+        $maxWords = min(6, count($words) - $startIndex); // Look ahead up to 6 words
+        
+        for ($i = 0; $i < $maxWords; $i++) {
+            $word = $words[$startIndex + $i];
+            // Stop if we hit a word that's not part of a year
+            if (!in_array($word, ['dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'satu', 'ribu', 'ratus', 'puluh', 'belas', 'sepuluh', 'sebelas'])) {
+                break;
+            }
+            $yearText .= $word . ' ';
+        }
+        
+        $yearText = trim($yearText);
+        if ($yearText) {
+            return $this->parseIndonesianYear($yearText);
+        }
+        
+        return null;
+    }
+
+    private function parseIndonesianYear($yearText)
+    {
+        $yearText = strtolower(trim($yearText));
+        
+        // Clean up punctuation and extra words
+        $yearText = preg_replace('/[,\.!?]/', '', $yearText);
+        $yearText = preg_replace('/\b(dengan|kami|yang|telah|ini|adalah|lalu|hingga)\b/', '', $yearText);
+        $yearText = trim(preg_replace('/\s+/', ' ', $yearText));
+        
+        \Log::info('Parsing Indonesian year (cleaned): ' . $yearText);
+        
+        // Common year patterns - ordered from most specific to least specific
+        $yearPatterns = [
+            // 2020s - most specific first
+            'dua ribu dua puluh sembilan' => 2029,
+            'dua ribu dua puluh delapan' => 2028,
+            'dua ribu dua puluh tujuh' => 2027,
+            'dua ribu dua puluh enam' => 2026,
+            'dua ribu dua puluh lima' => 2025,
+            'dua ribu dua puluh empat' => 2024,
+            'dua ribu dua puluh tiga' => 2023,
+            'dua ribu dua puluh dua' => 2022,
+            'dua ribu dua puluh satu' => 2021,
+            'dua ribu dua puluh' => 2020,
+            
+            // 2010s
+            'dua ribu sembilan belas' => 2019,
+            'dua ribu delapan belas' => 2018,
+            'dua ribu tujuh belas' => 2017,
+            'dua ribu enam belas' => 2016,
+            'dua ribu lima belas' => 2015,
+            'dua ribu empat belas' => 2014,
+            'dua ribu tiga belas' => 2013,
+            'dua ribu dua belas' => 2012,
+            'dua ribu sebelas' => 2011,
+            'dua ribu sepuluh' => 2010,
+            
+            // 2000s
+            'dua ribu sembilan' => 2009,
+            'dua ribu delapan' => 2008,
+            'dua ribu tujuh' => 2007,
+            'dua ribu enam' => 2006,
+            'dua ribu lima' => 2005,
+            'dua ribu empat' => 2004,
+            'dua ribu tiga' => 2003,
+            'dua ribu dua' => 2002,
+            'dua ribu satu' => 2001,
+            'dua ribu' => 2000,
+        ];
+        
+        // Use exact matching first for better accuracy
+        if (isset($yearPatterns[$yearText])) {
+            \Log::info('Found exact year match: ' . $yearText . ' = ' . $yearPatterns[$yearText]);
+            return $yearPatterns[$yearText];
+        }
+        
+        // Then try partial matching for cases where there might be extra words
+        foreach ($yearPatterns as $pattern => $year) {
+            if (strpos($yearText, $pattern) !== false) {
+                \Log::info('Found partial year pattern: ' . $pattern . ' = ' . $year);
+                return $year;
+            }
+        }
+        
+        // Try to parse more complex patterns
+        if (preg_match('/dua\s+ribu\s+(.*)/i', $yearText, $matches)) {
+            $remainder = trim($matches[1]);
+            $baseYear = 2000;
+            
+            // Parse the remainder (e.g., "dua puluh dua" = 22)
+            $numberMap = [
+                'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
+                'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
+                'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
+                'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
+                'sembilan belas' => 19
+            ];
+            
+            if (isset($numberMap[$remainder])) {
+                return $baseYear + $numberMap[$remainder];
+            }
+            
+            // Handle "dua puluh X" patterns
+            if (preg_match('/dua\s+puluh\s*(.*)/i', $remainder, $puluhMatches)) {
+                $extra = trim($puluhMatches[1]);
+                $result = $baseYear + 20;
+                if ($extra && isset($numberMap[$extra])) {
+                    $result += $numberMap[$extra];
+                }
+                return $result;
+            }
+            
+            // Handle "tiga puluh X" patterns  
+            if (preg_match('/tiga\s+puluh\s*(.*)/i', $remainder, $puluhMatches)) {
+                $extra = trim($puluhMatches[1]);
+                $result = $baseYear + 30;
+                if ($extra && isset($numberMap[$extra])) {
+                    $result += $numberMap[$extra];
+                }
+                return $result;
+            }
+        }
+        
+        return null;
     }
 
     // Helper method to find divisi from text
@@ -1076,44 +1158,58 @@ class SuratController extends Controller
         return $isDuplicate;
     }
 
-    // Helper: Get next available nomor urut (skip locked by others)
+    // Helper: Get next available nomor urut using counter system
     public function getNextNomorUrut($divisiId, $jenisSuratId)
     {
-        \Log::info('Getting next nomor urut:', [
+        \Log::info('Getting next nomor urut (preview only):', [
             'divisi_id' => $divisiId,
             'jenis_surat_id' => $jenisSuratId
         ]);
         
-        $usedNumbers = Surat::where('divisi_id', $divisiId)
-            ->where('jenis_surat_id', $jenisSuratId)
-                               ->pluck('nomor_urut')
-            ->toArray();
-            
-        $lockedNumbers = NomorUrutLock::where('divisi_id', $divisiId)
-            ->where('jenis_surat_id', $jenisSuratId)
-            ->where(function($q) {
-                $q->whereNull('locked_until')->orWhere('locked_until', '>', now());
-            })
-                               ->pluck('nomor_urut')
-            ->toArray();
-            
-        $allUsed = array_unique(array_merge($usedNumbers, $lockedNumbers));
-        
-        \Log::info('Nomor urut status:', [
-            'used_numbers' => $usedNumbers,
-            'locked_numbers' => $lockedNumbers,
-            'all_used' => $allUsed
-        ]);
-        
-        for ($i = 1; $i <= 999; $i++) {
-            if (!in_array($i, $allUsed)) {
-                \Log::info('Next available nomor urut: ' . $i);
-                return $i;
-            }
+        // Get jenis surat with counter
+        $jenisSurat = JenisSurat::find($jenisSuratId);
+        if (!$jenisSurat) {
+            \Log::error('Jenis surat not found: ' . $jenisSuratId);
+            return null;
         }
         
-        \Log::warning('No available nomor urut found');
-        return null;
+        // Peek next counter WITHOUT incrementing (for preview/lock purposes)
+        $nextCounter = $jenisSurat->peekNextCounter();
+        
+        \Log::info('Next counter preview from jenis surat:', [
+            'jenis_surat_id' => $jenisSuratId,
+            'next_counter_preview' => $nextCounter,
+            'current_month' => \Carbon\Carbon::now()->format('Y-m'),
+            'last_reset_month' => $jenisSurat->last_reset_month
+        ]);
+        
+        return $nextCounter;
+    }
+
+    /**
+     * Actually increment the counter when finalizing the letter
+     */
+    public function incrementNomorUrut($jenisSuratId)
+    {
+        \Log::info('Incrementing nomor urut (final submit):', [
+            'jenis_surat_id' => $jenisSuratId
+        ]);
+        
+        $jenisSurat = JenisSurat::find($jenisSuratId);
+        if (!$jenisSurat) {
+            \Log::error('Jenis surat not found for increment: ' . $jenisSuratId);
+            return null;
+        }
+        
+        // Actually increment the counter
+        $finalCounter = $jenisSurat->incrementCounter();
+        
+        \Log::info('Final counter incremented:', [
+            'jenis_surat_id' => $jenisSuratId,
+            'final_counter' => $finalCounter
+        ]);
+        
+        return $finalCounter;
     }
 
     // Helper: Lock nomor urut for a specific user
@@ -1149,6 +1245,8 @@ class SuratController extends Controller
     public function preview(Request $request)
     {
         try {
+            \Log::info('Preview method called with request data:', $request->all());
+            
             $request->validate([
                 'file_path' => 'required',
                 'nomor_urut' => 'required|integer',
@@ -1158,6 +1256,8 @@ class SuratController extends Controller
             ]);
             
             $filePath = $request->input('file_path');
+            
+            \Log::info('File path from request: ' . $filePath);
             
             // PERBAIKAN PATH HANDLING - Pastikan path benar
             $correctPath = storage_path('app/' . $filePath);
@@ -1200,121 +1300,171 @@ class SuratController extends Controller
             
             \Log::info('File extension: ' . $fileExtension);
             
-            // Try to fill the document first
-            $filledFilePath = null;
-            $fillingSuccess = false;
-            
+            // Handle both PDF files and DOCX files (if conversion failed)
             if ($fileExtension === 'pdf') {
-                // Fill PDF dengan nomor surat untuk preview
-                \Log::info('Attempting to fill PDF...');
+                // Try to fill the PDF document with nomor surat
+                $filledFilePath = null;
+                $fillingSuccess = false;
+                
+                \Log::info('Attempting to fill PDF with nomor surat...');
                 $filledFilePath = $this->fillPdfWithNomorSurat($correctPath, $nomorSurat);
                 
                 if ($filledFilePath && file_exists($filledFilePath)) {
                     \Log::info('PDF filled successfully: ' . $filledFilePath);
                     $fillingSuccess = true;
-                } else {
-                    \Log::warning('PDF filling failed, will show original file');
-                }
-            } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                // Fill Word document dengan nomor surat untuk preview
-                \Log::info('Attempting to fill Word document...');
-                $filledFilePath = $this->fillWordWithNomorSurat($correctPath, $nomorSurat);
-                
-                if ($filledFilePath && file_exists($filledFilePath)) {
-                    \Log::info('Word document filled successfully: ' . $filledFilePath);
-                    $fillingSuccess = true;
-                } else {
-                    \Log::warning('Word filling failed, will show original file');
-                }
-            }
-            
-            // Return the appropriate file
-            if ($fillingSuccess && $filledFilePath) {
-                if ($fileExtension === 'pdf') {
+                    
+                    // Return the filled PDF for inline preview
                     return response()->file($filledFilePath, [
                         'Content-Type' => 'application/pdf',
                         'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
                     ])->deleteFileAfterSend(true);
-                } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                    $mimeType = $fileExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/msword';
-                    return response()->download($filledFilePath, 'preview_surat.' . $fileExtension, [
-                        'Content-Type' => $mimeType,
-                    ])->deleteFileAfterSend(true);
+                } else {
+                    \Log::warning('PDF filling failed, showing original file');
+                    
+                    // Fallback: return original PDF file
+                    return response()->file($correctPath, [
+                        'Content-Type' => 'application/pdf',
+                        'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
+                    ]);
                 }
-            }
-            
-            // Fallback: return file asli jika tidak bisa fill
-            \Log::info('Returning original file as fallback');
-            if ($fileExtension === 'pdf') {
-                return response()->file($correctPath, [
-                    'Content-Type' => 'application/pdf',
-                    'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
-                ]);
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                $mimeType = $fileExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/msword';
-                return response()->download($correctPath, 'preview_surat.' . $fileExtension, [
-                    'Content-Type' => $mimeType,
-                ]);
+                // Handle DOCX files that couldn't be converted at upload time
+                \Log::info('Handling DOCX file for preview - attempting conversion now');
+                
+                // Try to convert to PDF for preview
+                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($correctPath);
+                
+                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
+                    \Log::info('DOCX converted to PDF for preview: ' . $convertedPdfPath);
+                    
+                    // Return the converted PDF for inline preview
+                    return response()->file($convertedPdfPath, [
+                        'Content-Type' => 'application/pdf',
+                        'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
+                    ])->deleteFileAfterSend(true);
+                } else {
+                    \Log::error('Failed to convert DOCX to PDF for preview, forcing download');
+                    
+                    // Fallback: force download of DOCX file
+                    $mimeType = $fileExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/msword';
+                    return response()->download($correctPath, 'preview_surat.' . $fileExtension, [
+                        'Content-Type' => $mimeType,
+                    ]);
+                }
             } else {
-                return response()->download($correctPath);
+                \Log::error('Unexpected file type in preview: ' . $fileExtension);
+                return response('File type not supported for preview: ' . $fileExtension, 400);
             }
             
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error in preview method: ' . $e->getMessage(), [
+                'errors' => $e->errors(),
+                'request_data' => $request->all()
+            ]);
+            return response('Validation error: ' . json_encode($e->errors()), 422);
         } catch (\Exception $e) {
             \Log::error('Error in preview method: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
             ]);
             return response('Error generating preview: ' . $e->getMessage(), 500);
         }
     }
 
-    // Store from preview (when file already has valid nomor surat)
-    public function storeFromPreview(Request $request)
+    /**
+     * Serve file surat dengan permission check
+     */
+    public function serveFile($id)
     {
-        $request->validate([
-            'file_path' => 'required',
-            'file_size' => 'required|integer',
-            'mime_type' => 'required|string',
-            'nomor_urut' => 'required|integer',
-            'divisi_id' => 'required|exists:divisions,id',
-            'jenis_surat_id' => 'required|exists:jenis_surat,id',
-            'perihal' => 'required|string',
-            'tanggal_surat' => 'required|date',
-            'tanggal_diterima' => 'required|date',
-        ]);
-
-        // Generate nomor surat untuk database
-        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
-            $request->nomor_urut,
-            Division::find($request->divisi_id)->kode_divisi,
-            JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-            date('m', strtotime($request->tanggal_surat)),
-            date('Y', strtotime($request->tanggal_surat))
-        );
-
-        // Cek duplikasi nomor urut
-        if (Surat::where('nomor_urut', $request->nomor_urut)
-            ->where('divisi_id', $request->divisi_id)
-            ->where('jenis_surat_id', $request->jenis_surat_id)
-            ->exists()) {
-            return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini.'])->withInput();
+        try {
+            $surat = Surat::with(['division', 'jenisSurat', 'uploader', 'accesses'])->findOrFail($id);
+            $user = Auth::user();
+            
+            // Check permission untuk akses file
+            if ($surat->is_private) {
+                // Jika surat private, cek apakah user bisa akses
+                $hasAccess = $user->is_admin || 
+                           $surat->uploaded_by === $user->id || 
+                           $surat->accesses->contains('user_id', $user->id);
+                           
+                if (!$hasAccess) {
+                    abort(403, 'Anda tidak memiliki akses untuk melihat surat ini.');
+                }
+            }
+            
+            // Get file path
+            $filePath = storage_path('app/' . $surat->file_path);
+            
+            if (!file_exists($filePath)) {
+                abort(404, 'File tidak ditemukan.');
+            }
+            
+            // Determine MIME type
+            $mimeType = $surat->mime_type ?? 'application/pdf';
+            
+            // Return file response
+            return response()->file($filePath, [
+                'Content-Type' => $mimeType,
+                'Content-Disposition' => 'inline; filename="' . basename($surat->file_path) . '"'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error serving file: ' . $e->getMessage(), [
+                'surat_id' => $id,
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            abort(500, 'Error loading file.');
         }
-
-        // Create surat record (file sudah berisi nomor, tidak perlu fill lagi)
-        $surat = Surat::create([
-            'nomor_urut' => $request->nomor_urut,
-            'nomor_surat' => $nomorSurat,
-            'divisi_id' => $request->divisi_id,
-            'jenis_surat_id' => $request->jenis_surat_id,
-            'perihal' => $request->perihal,
-            'tanggal_surat' => $request->tanggal_surat,
-            'tanggal_diterima' => $request->tanggal_diterima,
-            'file_path' => $request->file_path,
-            'file_size' => $request->file_size,
-            'mime_type' => $request->mime_type,
-            'is_private' => $request->has('is_private'),
-            'uploaded_by' => Auth::id(),
-        ]);
-
-        return redirect()->route('home')->with('success', 'Surat berhasil disimpan dengan nomor: ' . $nomorSurat);
     }
-} 
+
+    /**
+     * Download file surat dengan permission check
+     */
+    public function downloadFile($id)
+    {
+        try {
+            $surat = Surat::with(['division', 'jenisSurat', 'uploader', 'accesses'])->findOrFail($id);
+            $user = Auth::user();
+            
+            // Check permission untuk download file (sama dengan serveFile)
+            if ($surat->is_private) {
+                $hasAccess = $user->is_admin || 
+                           $surat->uploaded_by === $user->id || 
+                           $surat->accesses->contains('user_id', $user->id);
+                           
+                if (!$hasAccess) {
+                    abort(403, 'Anda tidak memiliki akses untuk mendownload surat ini.');
+                }
+            }
+            
+            // Get file path
+            $filePath = storage_path('app/' . $surat->file_path);
+            
+            if (!file_exists($filePath)) {
+                abort(404, 'File tidak ditemukan.');
+            }
+            
+            // Generate descriptive filename for download
+            $originalFileName = pathinfo($surat->file_path, PATHINFO_FILENAME);
+            $extension = pathinfo($surat->file_path, PATHINFO_EXTENSION);
+            $downloadName = "{$surat->nomor_surat} - {$surat->perihal}.{$extension}";
+            
+            // Clean filename (remove invalid characters)
+            $downloadName = preg_replace('/[^\w\s\-\.()]/u', '_', $downloadName);
+            
+            // Return download response
+            return response()->download($filePath, $downloadName, [
+                'Content-Type' => $surat->mime_type ?? 'application/pdf'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error downloading file: ' . $e->getMessage(), [
+                'surat_id' => $id,
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            abort(500, 'Error downloading file.');
+        }
+    }
+}

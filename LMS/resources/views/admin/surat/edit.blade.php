@@ -117,6 +117,12 @@
                         <!-- Private Access Selection -->
                         <div id="private-access-section" class="mb-3" style="display: {{ $surat->is_private ? 'block' : 'none' }};">
                             <label class="form-label">Pilih User yang Dapat Mengakses Surat Ini:</label>
+                            <div class="alert alert-info mb-3">
+                                <small>
+                                    <i class="fas fa-info-circle"></i>
+                                    <strong>Info:</strong> Admin dan pengupload original tidak ditampilkan dalam daftar karena sudah otomatis memiliki akses ke surat ini.
+                                </small>
+                            </div>
                             <div class="row">
                                 @foreach($users as $user)
                                     <div class="col-md-4 mb-2">

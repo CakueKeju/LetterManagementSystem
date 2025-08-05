@@ -33,25 +33,28 @@ class HomeController extends Controller
         // Filter based on user access
         $user = Auth::user();
         
-        // Show public surat from same division OR private surat that user has access to
-        $query->where(function($q) use ($user) {
-            // Public surat from same division
-            $q->where(function($subQ) use ($user) {
-                $subQ->where('is_private', false)
-                     ->where('divisi_id', $user->divisi_id);
+        // Admin can see all surat
+        if (!$user->is_admin) {
+            // Non-admin: Show public surat from same division OR private surat that user has access to
+            $query->where(function($q) use ($user) {
+                // Public surat from same division
+                $q->where(function($subQ) use ($user) {
+                    $subQ->where('is_private', false)
+                         ->where('divisi_id', $user->divisi_id);
+                });
+                
+                // OR private surat that user uploaded
+                $q->orWhere('uploaded_by', $user->id);
+                
+                // OR private surat that user has access to
+                $q->orWhereExists(function($existsQuery) use ($user) {
+                    $existsQuery->select(\DB::raw(1))
+                               ->from('surat_access')
+                               ->whereColumn('surat_access.surat_id', 'surat.id')
+                               ->where('surat_access.user_id', $user->id);
+                });
             });
-            
-            // OR private surat that user uploaded
-            $q->orWhere('uploaded_by', $user->id);
-            
-            // OR private surat that user has access to
-            $q->orWhereExists(function($existsQuery) use ($user) {
-                $existsQuery->select(\DB::raw(1))
-                           ->from('surat_access')
-                           ->whereColumn('surat_access.surat_id', 'surat.id')
-                           ->where('surat_access.user_id', $user->id);
-            });
-        });
+        }
 
         // Additional filtering
         if ($request->filled('divisi_id')) {

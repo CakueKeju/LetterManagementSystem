@@ -4,13 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class SuratAccess extends Model
 {
     use HasFactory;
 
     protected $table = 'surat_access';
-
     public $timestamps = false;
 
     protected $fillable = [
@@ -22,71 +25,68 @@ class SuratAccess extends Model
 
     protected $casts = [
         'granted_at' => 'datetime',
+        'surat_id' => 'integer',
+        'user_id' => 'integer',
     ];
 
-    // Relationships
-    public function surat()
+    public function surat(): BelongsTo
     {
         return $this->belongsTo(Surat::class, 'surat_id');
     }
 
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function grantor()
+    public function grantor(): HasOneThrough
     {
-        // Grantor adalah pemilik surat (uploaded_by)
         return $this->hasOneThrough(
             User::class,
             Surat::class,
-            'id', // Foreign key on surat table
-            'id', // Foreign key on users table
-            'surat_id', // Local key on surat_access table
-            'uploaded_by' // Local key on surat table
+            'id',
+            'id',
+            'surat_id',
+            'uploaded_by'
         );
     }
 
-    // Scopes
-    public function scopeForSurat($query, $suratId)
+    public function scopeForSurat(Builder $query, int $suratId): Builder
     {
         return $query->where('surat_id', $suratId);
     }
 
-    public function scopeForUser($query, $userId)
+    public function scopeForUser(Builder $query, int $userId): Builder
     {
         return $query->where('user_id', $userId);
     }
 
-    public function scopeGrantedToday($query)
+    public function scopeGrantedToday(Builder $query): Builder
     {
         return $query->whereDate('granted_at', today());
     }
 
-    public function scopeGrantedRecently($query, $days = 7)
+    public function scopeGrantedRecently(Builder $query, int $days = 7): Builder
     {
         return $query->where('granted_at', '>=', now()->subDays($days));
     }
 
-    // Helper methods
-    public function getGrantorName()
+    public function getGrantorName(): string
     {
         return $this->surat->uploader->full_name ?? 'Unknown';
     }
 
-    public function isGrantedRecently($hours = 24)
+    public function isGrantedRecently(int $hours = 24): bool
     {
         return $this->granted_at->diffInHours(now()) <= $hours;
     }
 
-    public function getAccessDuration()
+    public function getAccessDuration(): string
     {
         return $this->granted_at->diffForHumans();
     }
 
-    // Static methods
-    public static function grantAccess($suratId, $userId, $notes = null)
+    public static function grantAccess(int $suratId, int $userId, ?string $notes = null): self
     {
         return self::updateOrCreate(
             [
@@ -100,14 +100,14 @@ class SuratAccess extends Model
         );
     }
 
-    public static function revokeAccess($suratId, $userId)
+    public static function revokeAccess(int $suratId, int $userId): int
     {
         return self::where('surat_id', $suratId)
                   ->where('user_id', $userId)
                   ->delete();
     }
 
-    public static function getUserAccessibleSurat($userId)
+    public static function getUserAccessibleSurat(int $userId): Collection
     {
         return self::where('user_id', $userId)
                   ->with(['surat' => function($query) {
@@ -116,7 +116,7 @@ class SuratAccess extends Model
                   ->get();
     }
 
-    public static function getSuratAccessList($suratId)
+    public static function getSuratAccessList(int $suratId): Collection
     {
         return self::where('surat_id', $suratId)
                   ->with('user')

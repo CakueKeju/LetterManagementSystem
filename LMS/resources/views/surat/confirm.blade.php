@@ -51,7 +51,7 @@
                     <label class="form-label">Nomor Surat (Preview)</label>
                     <div id="nomorSuratPreview" class="form-control bg-light" style="font-weight:bold;">
                         {{ $nomor_surat ?? '.../.../.../INTENS/.../...' }}
-                </div>
+                    </div>
                 </div>
                 <input type="hidden" name="nomor_urut" id="nomor_urut_hidden" value="{{ $nomor_urut ?? '' }}">
                 <input type="hidden" name="nomor_surat" id="nomor_surat_hidden" value="{{ $nomor_surat ?? '.../.../.../INTENS/.../...' }}">
@@ -78,7 +78,7 @@
                 </div>
                 <div class="mb-3">
                     <label for="tanggal_surat" class="form-label">Tanggal Surat</label>
-                    <input type="date" class="form-control" id="tanggal_surat" name="tanggal_surat" required>
+                    <input type="date" class="form-control" id="tanggal_surat" name="tanggal_surat" value="{{ date('Y-m-d') }}" required>
                 </div>
                 <input type="hidden" name="tanggal_diterima" value="{{ date('Y-m-d') }}">
                 <div class="mb-3">
@@ -117,6 +117,7 @@
                                 <small>
                                     <i class="fas fa-info-circle"></i>
                                     <strong>Info:</strong> User yang dipilih akan dapat mengakses surat private ini. 
+                                    Admin dan Anda (pengupload) tidak perlu dipilih karena sudah otomatis memiliki akses.
                                     Jika tidak ada user yang dipilih, hanya Anda dan Admin yang dapat mengakses.
                                 </small>
                             </div>
@@ -129,6 +130,8 @@
         <button type="submit" class="btn btn-primary">Konfirmasi</button>
         <button type="button" class="btn btn-danger" id="btnCancelLock">Batalkan</button>
     </form>
+    
+
     
     <form id="previewForm" action="{{ route('surat.preview') }}" method="POST" target="_blank" style="display:none;">
         @csrf
@@ -145,19 +148,23 @@
 function updateNomorSuratPreview() {
     var divisiInput = document.getElementById('divisi_id');
     var jenisSelect = document.getElementById('jenis_surat_id');
-    var tanggalSurat = document.getElementById('tanggal_surat').value;
+    var tanggalSuratInput = document.getElementById('tanggal_surat');
+    var tanggalSurat = tanggalSuratInput.value;
     var divisiId = divisiInput.value;
     var kodeDivisi = divisiInput.getAttribute('data-kode') || '...';
     var jenisSuratId = jenisSelect.value;
     var kodeJenis = jenisSelect.selectedOptions[0] ? jenisSelect.selectedOptions[0].getAttribute('data-kode') : '...';
-    var tgl = tanggalSurat ? new Date(tanggalSurat) : null;
-    var bulan = tgl && !isNaN(tgl.getMonth()) ? (tgl.getMonth()+1).toString().padStart(2, '0') : '...';
-    var tahun = tgl && !isNaN(tgl.getFullYear()) ? tgl.getFullYear() : '...';
+    
+    // Gunakan tanggal surat untuk bulan dan tahun (BUKAN tanggal upload)
+    var tgl = tanggalSurat ? new Date(tanggalSurat) : new Date();
+    var bulan = !isNaN(tgl.getMonth()) ? (tgl.getMonth()+1).toString().padStart(2, '0') : '...';
+    var tahun = !isNaN(tgl.getFullYear()) ? tgl.getFullYear() : '...';
     
     // Gunakan nomor urut yang sudah di-lock dari server
     var nomorUrut = document.getElementById('nomor_urut_hidden').value || '...';
     var nomorSurat = `${nomorUrut.toString().padStart(3, '0')}/${kodeDivisi}/${kodeJenis}/INTENS/${bulan}/${tahun}`;
     
+    // Update preview display
     document.getElementById('nomorSuratPreview').textContent = nomorSurat;
     document.getElementById('nomor_surat_hidden').value = nomorSurat;
     
@@ -165,23 +172,56 @@ function updateNomorSuratPreview() {
     document.getElementById('preview_nomor_urut').value = nomorUrut;
     document.getElementById('preview_divisi_id').value = divisiId;
     document.getElementById('preview_jenis_surat_id').value = jenisSuratId;
-    document.getElementById('preview_tanggal_surat').value = tanggalSurat;
+    document.getElementById('preview_tanggal_surat').value = tanggalSurat || new Date().toISOString().split('T')[0];
 }
 
-// Lock nomor urut
-function lockNomorUrutAjax() {
+// Lock nomor urut dan update preview
+function lockNomorUrutAndUpdate() {
     var divisiId = document.getElementById('divisi_id').value;
     var jenisSuratId = document.getElementById('jenis_surat_id').value;
-    if (!divisiId || !jenisSuratId) return;
+    
+    if (!divisiId || !jenisSuratId) {
+        // Update preview dengan data yang ada meskipun belum ada nomor urut
+        updateNomorSuratPreview();
+        return;
+    }
+    
+    // Update preview dulu dengan placeholder untuk responsivitas
+    updateNomorSuratPreview();
     
     fetch(`/api/lock-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}`)
         .then(response => response.json())
         .then(data => {
             if (data.nomor_urut) {
                 document.getElementById('nomor_urut_hidden').value = data.nomor_urut;
+                // Update lagi setelah dapat nomor urut yang benar
                 updateNomorSuratPreview();
             }
+        })
+        .catch(error => {
+            console.error('Error locking nomor urut:', error);
+            // Tetap update preview meskipun ada error
+            updateNomorSuratPreview();
         });
+}
+
+// Update preview tanpa delay untuk perubahan tanggal
+function updateNomorSuratPreviewInstant() {
+    updateNomorSuratPreview();
+}
+
+// Debounced version untuk input yang sering berubah
+let debounceTimer;
+function updateNomorSuratPreviewDebounced() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function() {
+        updateNomorSuratPreview();
+    }, 200); // 200ms debounce
+}
+
+// Legacy function untuk compatibility
+function lockNomorUrutAjax() {
+    lockNomorUrutAndUpdate();
 }
 
 // Preview surat
@@ -291,31 +331,247 @@ function cancelLock() {
 
 // Event listeners untuk update nomor surat
 document.addEventListener('DOMContentLoaded', function() {
-    // Update nomor surat saat halaman load
-    updateNomorSuratPreview();
-    
-    // Event listeners untuk perubahan field
-    document.getElementById('jenis_surat_id').addEventListener('change', updateNomorSuratPreview);
-    document.getElementById('tanggal_surat').addEventListener('change', updateNomorSuratPreview);
-    
-    // Auto-cancel lock setelah 10 menit idle
-    setTimeout(function() {
-        if (confirm('Sesi upload akan berakhir. Lanjutkan?')) {
-            // User masih aktif, reset timer
-            setTimeout(arguments.callee, 600000); // 10 menit
+        // Set tanggal default jika belum ada
+        var tanggalSuratInput = document.getElementById('tanggal_surat');
+        if (!tanggalSuratInput.value) {
+            tanggalSuratInput.value = new Date().toISOString().split('T')[0];
+        }
+        
+        // Lock nomor urut jika jenis surat sudah dipilih
+        var jenisSelect = document.getElementById('jenis_surat_id');
+        if (jenisSelect.value) {
+            lockNomorUrutAndUpdate();
         } else {
-            // Cancel lock dan redirect
-            fetch('/api/cancel-nomor-urut-lock', {
+            updateNomorSuratPreview();
+        }
+        
+        // Event listeners untuk perubahan field - real time update
+        jenisSelect.addEventListener('change', function() {
+            console.log('Jenis surat changed to:', this.value);
+            lockNomorUrutAndUpdate();
+        });
+        
+        // Update preview saat tanggal berubah
+        tanggalSuratInput.addEventListener('change', updateNomorSuratPreviewInstant);
+        tanggalSuratInput.addEventListener('input', updateNomorSuratPreviewDebounced);
+        
+        // Initialize lock management
+        initializeLockManagement();
+    });
+
+    // Lock management with improved timeout and page leave detection
+    let lockExtensionInterval;
+    let inactivityTimeout;
+    let lastActivityTime = Date.now();
+    
+    function initializeLockManagement() {
+        // Keep lock alive every 25 minutes (5 minutes before 30-minute expiry)
+        lockExtensionInterval = setInterval(extendLock, 25 * 60 * 1000);
+        
+        // Setup heartbeat every 5 minutes to keep locks alive and cleanup expired ones
+        if (window.heartbeatInterval) {
+            clearInterval(window.heartbeatInterval);
+        }
+        window.heartbeatInterval = setInterval(function() {
+            fetch('/api/heartbeat-nomor-urut-lock', {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                     'Content-Type': 'application/json',
                 }
-            }).then(() => {
-                window.location.href = '{{ route("home") }}';
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Heartbeat successful, locks extended');
+                }
+            })
+            .catch(error => {
+                console.warn('Heartbeat failed:', error);
+            });
+        }, 5 * 60 * 1000); // 5 minutes
+        
+        // Reset inactivity timer on user interaction
+        resetInactivityTimer();
+        
+        // Track user activity
+        document.addEventListener('mousemove', trackActivity);
+        document.addEventListener('keypress', trackActivity);
+        document.addEventListener('click', trackActivity);
+        document.addEventListener('scroll', trackActivity);
+        
+        // Handle page unload/leave events
+        window.addEventListener('beforeunload', function(e) {
+            // Cancel lock when user is actually leaving the page
+            navigator.sendBeacon('/api/cancel-nomor-urut-lock', JSON.stringify({
+                _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }));
+        });
+        
+        // Handle visibility change (tab switching - not leaving page)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // User returned to tab, extend lock if still within reasonable time
+                const timeSinceLastActivity = Date.now() - lastActivityTime;
+                if (timeSinceLastActivity < 30 * 60 * 1000) { // 30 minutes
+                    extendLock();
+                }
+            }
+        });
+    }
+    
+    function trackActivity() {
+        lastActivityTime = Date.now();
+        resetInactivityTimer();
+    }
+    
+    function resetInactivityTimer() {
+        if (inactivityTimeout) {
+            clearTimeout(inactivityTimeout);
+        }
+        
+        // Set 30-minute inactivity timeout
+        inactivityTimeout = setTimeout(function() {
+            if (confirm('Anda tidak aktif selama 30 menit. Lanjutkan proses upload?')) {
+                // User wants to continue, extend lock and reset timer
+                extendLock();
+                resetInactivityTimer();
+            } else {
+                // User doesn't want to continue, cancel lock and redirect
+                cancelLock();
+            }
+        }, 30 * 60 * 1000); // 30 minutes
+    }
+    
+    function extendLock() {
+        const divisiId = document.getElementById('divisi_id')?.value;
+        const jenisSuratId = document.getElementById('jenis_surat_id')?.value;
+        
+        if (divisiId && jenisSuratId) {
+            fetch('/api/extend-nomor-urut-lock', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    divisi_id: divisiId,
+                    jenis_surat_id: jenisSuratId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Lock extended successfully');
+                } else {
+                    console.warn('Failed to extend lock');
+                }
+            })
+            .catch(error => {
+                console.error('Error extending lock:', error);
             });
         }
-    }, 600000); // 10 menit
-});
+    }
+    
+    function cancelLock() {
+        fetch('/api/cancel-nomor-urut-lock', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`Lock cancelled. Cleaned up ${data.cancelled_locks} user locks and ${data.cleaned_expired_locks} expired locks.`);
+            }
+            cleanupLockManagement();
+            window.location.href = '{{ route("home") }}';
+        })
+        .catch(error => {
+            console.error('Error canceling lock:', error);
+            // Redirect anyway
+            cleanupLockManagement();
+            window.location.href = '{{ route("home") }}';
+        });
+    }
+    
+    function cleanupLockManagement() {
+        if (lockExtensionInterval) {
+            clearInterval(lockExtensionInterval);
+        }
+        if (window.heartbeatInterval) {
+            clearInterval(window.heartbeatInterval);
+        }
+        if (inactivityTimeout) {
+            clearTimeout(inactivityTimeout);
+        }
+        
+        // Remove event listeners
+        document.removeEventListener('mousemove', trackActivity);
+        document.removeEventListener('keypress', trackActivity);
+        document.removeEventListener('click', trackActivity);
+        document.removeEventListener('scroll', trackActivity);
+    }
+
+    // Add page unload detection for automatic lock cleanup
+    window.addEventListener('beforeunload', function(e) {
+        // Cancel locks when page is being closed/navigated away
+        if (navigator.sendBeacon) {
+            // Use sendBeacon for reliable cleanup during page unload
+            const formData = new FormData();
+            formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
+            navigator.sendBeacon('/api/cancel-nomor-urut-lock', formData);
+        } else {
+            // Fallback for older browsers
+            fetch('/api/cancel-nomor-urut-lock', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                },
+                keepalive: true
+            }).catch(() => {}); // Ignore errors during unload
+        }
+    });
+    
+    // Add visibility change detection
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            // Page is hidden (user switched tabs, minimized, etc.)
+            console.log('Page hidden - user may have navigated away');
+            // Start a timer to cleanup locks if user doesn't return
+            setTimeout(function() {
+                if (document.hidden) {
+                    // User still away after 2 minutes, cleanup locks
+                    fetch('/api/cancel-nomor-urut-lock', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        }
+                    }).catch(() => {});
+                }
+            }, 2 * 60 * 1000); // 2 minutes
+        } else {
+            // Page is visible again
+            console.log('Page visible - user returned');
+            // Extend locks since user is back
+            extendLock();
+        }
+    });
+    
+    // Add focus/blur detection for additional safety
+    window.addEventListener('blur', function() {
+        console.log('Window lost focus');
+    });
+    
+    window.addEventListener('focus', function() {
+        console.log('Window gained focus');
+        // Extend locks when user returns focus to window
+        extendLock();
+    });
+
+    // Add button event listener
+    document.getElementById('btnCancelLock').addEventListener('click', cancelLock);
 </script>
 @endsection 

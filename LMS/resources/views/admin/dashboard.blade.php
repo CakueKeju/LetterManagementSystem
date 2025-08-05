@@ -98,7 +98,7 @@
                                     </h6>
                                 </div>
                                 <div class="card-body">
-                                    @if($recent_surat->count() > 0)
+                                    @if($recentSurat->count() > 0)
                                         <div class="table-responsive">
                                             <table class="table table-sm">
                                                 <thead>
@@ -112,7 +112,7 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    @foreach($recent_surat as $surat)
+                                                    @foreach($recentSurat as $surat)
                                                     <tr>
                                                         <td>
                                                             <a href="{{ route('admin.surat.edit', $surat->id) }}" class="text-decoration-none">
@@ -154,9 +154,9 @@
                                     </h6>
                                 </div>
                                 <div class="card-body">
-                                    @if($recent_users->count() > 0)
+                                    @if($recentUsers->count() > 0)
                                         <div class="list-group list-group-flush">
-                                            @foreach($recent_users as $user)
+                                            @foreach($recentUsers as $user)
                                             <div class="list-group-item d-flex justify-content-between align-items-center">
                                                 <div>
                                                     <strong>{{ $user->full_name }}</strong>

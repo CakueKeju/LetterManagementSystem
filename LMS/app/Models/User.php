@@ -3,6 +3,10 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -28,68 +32,62 @@ class User extends Authenticatable
     protected $casts = [
         'is_active' => 'boolean',
         'is_admin' => 'boolean',
+        'divisi_id' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 
-    // Relationships
-    public function division()
+    public function division(): BelongsTo
     {
         return $this->belongsTo(Division::class, 'divisi_id');
     }
 
-    public function uploadedSurat()
+    public function uploadedSurat(): HasMany
     {
         return $this->hasMany(Surat::class, 'uploaded_by');
     }
 
-    public function accessibleSurat()
+    public function accessibleSurat(): BelongsToMany
     {
         return $this->belongsToMany(Surat::class, 'surat_access', 'user_id', 'surat_id')
                     ->withPivot('granted_at', 'notes')
                     ->withTimestamps();
     }
 
-    public function suratAccess()
+    public function suratAccess(): HasMany
     {
         return $this->hasMany(SuratAccess::class, 'user_id');
     }
 
-    public function auditLogs()
+    public function auditLogs(): HasMany
     {
         return $this->hasMany(AuditLog::class);
     }
 
-    // Scopes
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
-    public function scopeByDivisi($query, $divisiId)
+    public function scopeByDivisi(Builder $query, int $divisiId): Builder
     {
         return $query->where('divisi_id', $divisiId);
     }
 
-    // Helper methods
-    public function canAccessSurat(Surat $surat)
+    public function canAccessSurat(Surat $surat): bool
     {
-        // Admin can access all surat
         if ($this->is_admin) {
             return true;
         }
 
-        // Jika surat public dan user dalam divisi yang sama
-        if (!$surat->is_private && $this->divisi_id == $surat->divisi_id) {
+        if (!$surat->is_private && $this->divisi_id === $surat->divisi_id) {
             return true;
         }
 
-        // Jika user adalah uploader
-        if ($surat->uploaded_by == $this->id) {
+        if ($surat->uploaded_by === $this->id) {
             return true;
         }
 
-        // Jika user diberi akses khusus untuk surat private
         if ($surat->is_private && SuratAccess::where('surat_id', $surat->id)->where('user_id', $this->id)->exists()) {
             return true;
         }
@@ -97,7 +95,7 @@ class User extends Authenticatable
         return false;
     }
 
-    public function isAdmin()
+    public function isAdmin(): bool
     {
         return $this->is_admin;
     }
