@@ -39,6 +39,9 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
     Route::get('/surat/manual/form', [App\Http\Controllers\SuratController::class, 'showManualForm'])->name('surat.manual.form');
     Route::post('/surat/manual/generate', [App\Http\Controllers\SuratController::class, 'manualGenerate'])->name('surat.manual.generate');
     Route::post('/surat/manual/upload', [App\Http\Controllers\SuratController::class, 'manualHandleUpload'])->name('surat.manual.handleUpload');
+    Route::get('/surat/manual/verification', [App\Http\Controllers\SuratController::class, 'manualVerification'])->name('surat.manual.verification');
+    Route::get('/surat/manual/re-edit/{lockId}', [App\Http\Controllers\SuratController::class, 'manualReEdit'])->name('surat.manual.reEdit');
+    Route::post('/surat/manual/re-upload', [App\Http\Controllers\SuratController::class, 'manualReUpload'])->name('surat.manual.reUpload');
     
     // ================================= FILE SERVE & DOWNLOAD =================================
     

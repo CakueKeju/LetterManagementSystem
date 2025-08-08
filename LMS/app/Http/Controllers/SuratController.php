@@ -100,20 +100,20 @@ class SuratController extends Controller
                 $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
                 
                 if ($convertedPdfPath && file_exists($convertedPdfPath)) {
-                    // Replace the original file with PDF version
+                    // ganti file asli dengan versi PDF
                     $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
                     $newFilePath = 'letters/' . $pdfDescriptiveName;
                     
-                    // Store the converted PDF
+                    // simpan PDF yang udah dikonversi
                     Storage::put($newFilePath, file_get_contents($convertedPdfPath));
                     
-                    // Delete the temporary converted file
+                    // hapus file PDF sementara
                     unlink($convertedPdfPath);
                     
-                    // Delete the original Word file
+                    // hapus file Word asli
                     Storage::delete($filePath);
                     
-                    // Update variables to use the PDF version
+                    // update variabel buat pake versi PDF
                     $filePath = $newFilePath;
                     $fileExtension = 'pdf';
                     $mimeType = 'application/pdf';
@@ -125,12 +125,12 @@ class SuratController extends Controller
                         'new_file_size' => $fileSize
                     ]);
                 } else {
-                    \Log::error('Failed to convert Word document to PDF using LibreOffice, keeping original file');
-                    // Keep the original DOCX file - we'll handle it differently in preview
+                    \Log::error('Gagal konversi Word ke PDF pake LibreOffice, tetep pake file asli');
+                    // tetep pake file DOCX asli - nanti dihandle beda di preview
                 }
             }
 
-            // Check for duplicate nomor urut
+            // cek duplicate nomor urut
             $user = Auth::user();
             $nextNomorUrut = $this->getNextNomorUrut($user->divisi_id, $jenisSuratId);
             
@@ -143,7 +143,7 @@ class SuratController extends Controller
             if ($this->checkDuplicate($user->divisi_id, $jenisSuratId, $nextNomorUrut)) {
                 \Log::warning('Duplicate nomor urut detected, showing warning');
                 
-                // Delete the uploaded file since it's a duplicate
+                // hapus file yang diupload karena duplicate
                 Storage::delete($filePath);
                 
                 return view('surat.automatic.duplicate_warning', [
@@ -156,12 +156,12 @@ class SuratController extends Controller
                 ]);
             }
 
-            // Extract text from file untuk detect nomor surat yang sudah ada
+            // ekstrak teks dari file buat detect nomor surat yang udah ada
             $extractedText = '';
             $extractionMethod = '';
         $ocrError = null;
         
-        // Since we now convert all Word documents to PDF, we only need to handle PDF files
+        // karena sekarang semua Word udah dikonversi ke PDF, cuma perlu handle PDF
             if ($fileExtension === 'pdf') {
         try {
                     $extractionMethod = 'PDF Parser';
@@ -186,17 +186,17 @@ class SuratController extends Controller
                 $extractedText = 'Word document processing - should have been converted to PDF.';
             }
 
-            // Check if file already contains a valid nomor surat
+            // cek apakah file udah ada nomor surat yang valid
             $hasValidNomor = false;
             if (!empty($extractedText)) {
                 $nomorPattern = '/\d{3}\/[A-Z]+\/[A-Z]+\/INTENS\/\d{2}\/\d{4}/';
                 if (preg_match($nomorPattern, $extractedText, $matches)) {
                     $hasValidNomor = true;
-                    \Log::info('Valid nomor surat found in file: ' . $matches[0]);
+                    \Log::info('Nomor surat valid ditemukan di file: ' . $matches[0]);
                 }
             }
 
-            // Generate nomor surat untuk preview
+            // generate nomor surat buat preview
             $jenisSurat = JenisSurat::find($jenisSuratId);
             $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $nextNomorUrut,
@@ -245,7 +245,7 @@ class SuratController extends Controller
         }
     }
 
-    // Show confirmation form for user to verify/correct code
+    // tampilkan form konfirmasi buat user verify/koreksi kode
     public function showConfirmForm(Request $request)
     {
         $jenisSurat = JenisSurat::where('divisi_id', Auth::user()->divisi_id)->active()->get();
@@ -1883,41 +1883,44 @@ class SuratController extends Controller
 
                 // For AJAX requests, redirect to verification page
                 if ($request->ajax()) {
-                    return redirect()->route('surat.manual.verification', ['success' => true]);
+                    return response()->json([
+                        'success' => true,
+                        'redirect' => route('surat.manual.verification', [
+                            'status' => 'success',
+                            'surat_id' => $surat->id
+                        ])
+                    ]);
                 }
 
-                return view('surat.manual.verification', [
-                    'verification_success' => true,
-                    'nomor_surat' => $data['nomor_surat'],
-                    'perihal' => $data['perihal'],
-                    'tanggal_surat' => $data['tanggal_surat'],
-                    'is_private' => $data['is_private'],
-                    'division_name' => $division->nama_divisi,
-                    'jenis_surat_name' => $jenisSurat->nama_jenis,
-                    'original_filename' => $originalName,
-                    'file_size' => $fileSize,
-                    'extracted_text' => $extractedText
+                return redirect()->route('surat.manual.verification', [
+                    'status' => 'success',
+                    'surat_id' => $surat->id
                 ]);
             } else {
                 // Nomor surat tidak sesuai
                 Storage::delete($filePath); // Hapus file yang gagal verifikasi
 
+                // Store failed verification data in session for re-edit
+                session([
+                    'failed_verification' => [
+                        'data' => $data,
+                        'error_message' => $verificationResult['error'],
+                        'expected_nomor_surat' => $expectedNomorSurat,
+                        'found_nomor_surat' => $verificationResult['found_nomor'],
+                        'extracted_text' => $extractedText,
+                        'ocr_error' => $ocrError,
+                        'original_filename' => $originalName
+                    ]
+                ]);
+
                 if ($request->ajax()) {
                     return response()->json([
                         'success' => false,
-                        'message' => $verificationResult['error'] . 
-                                   ($verificationResult['found_nomor'] ? ' Ditemukan: ' . $verificationResult['found_nomor'] : '')
+                        'redirect' => route('surat.manual.verification', ['status' => 'failed'])
                     ]);
                 }
 
-                return view('surat.manual.verification', [
-                    'verification_success' => false,
-                    'error_message' => $verificationResult['error'],
-                    'expected_nomor_surat' => $expectedNomorSurat,
-                    'found_nomor_surat' => $verificationResult['found_nomor'],
-                    'extracted_text' => $extractedText,
-                    'ocr_error' => $ocrError
-                ]);
+                return redirect()->route('surat.manual.verification', ['status' => 'failed']);
             }
 
         } catch (\Exception $e) {
@@ -1985,6 +1988,232 @@ class SuratController extends Controller
             'error' => 'Nomor surat dalam file tidak sesuai dengan nomor yang di-generate. Pastikan Anda telah mengisi nomor surat dengan benar.',
             'found_nomor' => $foundNomor
         ];
+    }
+
+    // ================================= VERIFICATION PAGE =================================
+    
+    /**
+     * tampilkan halaman verification manual upload
+     */
+    public function manualVerification(Request $request)
+    {
+        $status = $request->get('status');
+        
+        if ($status === 'success') {
+            $suratId = $request->get('surat_id');
+            $surat = Surat::with(['division', 'jenisSurat'])->find($suratId);
+            
+            if (!$surat) {
+                return redirect()->route('surat.manual.form')
+                    ->withErrors(['error' => 'Data surat tidak ditemukan']);
+            }
+            
+            return view('surat.manual.verification', [
+                'verification_success' => true,
+                'surat' => $surat
+            ]);
+            
+        } elseif ($status === 'failed') {
+            $failedData = session('failed_verification');
+            
+            if (!$failedData) {
+                return redirect()->route('surat.manual.form')
+                    ->withErrors(['error' => 'Data verification tidak ditemukan']);
+            }
+            
+            return view('surat.manual.verification', [
+                'verification_success' => false,
+                'failed_data' => $failedData
+            ]);
+        }
+        
+        return redirect()->route('surat.manual.form');
+    }
+    
+    /**
+     * tampilkan form re-edit untuk manual upload yang gagal
+     */
+    public function manualReEdit()
+    {
+        $failedData = session('failed_verification');
+        
+        if (!$failedData) {
+            return redirect()->route('surat.manual.form')
+                ->withErrors(['error' => 'Data tidak ditemukan. Silakan upload ulang.']);
+        }
+        
+        $user = Auth::user();
+        $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->get();
+        
+        return view('surat.manual.re_edit', [
+            'jenisSurat' => $jenisSurat,
+            'failedData' => $failedData,
+            'formData' => $failedData['data']
+        ]);
+    }
+    
+    /**
+     * handle re-upload setelah edit
+     */
+    public function manualReUpload(Request $request)
+    {
+        try {
+            $request->validate([
+                'file' => 'required|file|mimes:pdf,doc,docx|max:10240',
+                'divisi_id' => 'required|exists:divisions,id',
+                'jenis_surat_id' => 'required|exists:jenis_surat,id',
+                'perihal' => 'required|string|max:255',
+                'tanggal_surat' => 'required|date',
+                'tanggal_diterima' => 'nullable|date',
+                'is_private' => 'nullable|boolean'
+            ]);
+
+            // buat data baru dari form yang udah di-edit
+            $data = [
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'perihal' => $request->perihal,
+                'tanggal_surat' => $request->tanggal_surat,
+                'tanggal_diterima' => $request->tanggal_diterima ?: now()->format('Y-m-d'),
+                'is_private' => $request->boolean('is_private')
+            ];
+
+            // generate nomor surat baru
+            $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
+            $division = Division::find($data['divisi_id']);
+            
+            $nextNomorUrut = $this->getNextNomorUrut($data['divisi_id'], $data['jenis_surat_id'], $data['tanggal_surat']);
+            
+            $tanggalObj = new \DateTime($data['tanggal_surat']);
+            $month = $this->monthToRoman($tanggalObj->format('n'));
+            $year = $tanggalObj->format('Y');
+            
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%s',
+                $nextNomorUrut,
+                $division->kode_divisi,
+                $jenisSurat->kode_jenis,
+                $month,
+                $year
+            );
+            
+            $data['nomor_urut'] = $nextNomorUrut;
+            $data['nomor_surat'] = $nomorSurat;
+
+            // proses file upload yang sama seperti di manualHandleUpload
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+
+            // simpan file
+            $timestamp = date('Y-m-d_H-i-s');
+            $user = Auth::user();
+            $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $descriptiveName = sprintf(
+                'surat_manual_%s_%s_%s.%s',
+                $division->kode_divisi,
+                $jenisSurat->kode_jenis,
+                $timestamp,
+                $fileExtension
+            );
+
+            $filePath = $file->storeAs('letters', $descriptiveName);
+
+            // convert DOCX ke PDF kalau perlu
+            if (in_array($fileExtension, ['doc', 'docx'])) {
+                $fullPath = storage_path('app/' . $filePath);
+                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
+                
+                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
+                    $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
+                    $newFilePath = 'letters/' . $pdfDescriptiveName;
+                    
+                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
+                    unlink($convertedPdfPath);
+                    Storage::delete($filePath);
+                    
+                    $filePath = $newFilePath;
+                    $fileExtension = 'pdf';
+                    $mimeType = 'application/pdf';
+                    $fileSize = Storage::size($filePath);
+                }
+            }
+
+            // ekstrak teks untuk verifikasi
+            $extractedText = '';
+            $ocrError = null;
+
+            if ($fileExtension === 'pdf') {
+                try {
+                    $parser = new \Smalot\PdfParser\Parser();
+                    $fullPath = storage_path('app/' . $filePath);
+                    $pdf = $parser->parseFile($fullPath);
+                    foreach ($pdf->getPages() as $page) {
+                        $extractedText .= $page->getText() . ' ';
+                    }
+                } catch (\Exception $e) {
+                    $ocrError = 'Error ekstraksi teks (PDF Parser): ' . $e->getMessage();
+                }
+            }
+
+            // verifikasi nomor surat di file
+            $verificationResult = $this->verifyNomorSuratInText($extractedText, $nomorSurat);
+
+            if ($verificationResult['success']) {
+                // verifikasi berhasil - simpan ke database
+                $surat = Surat::create([
+                    'nomor_urut' => $data['nomor_urut'],
+                    'nomor_surat' => $data['nomor_surat'],
+                    'divisi_id' => $data['divisi_id'],
+                    'jenis_surat_id' => $data['jenis_surat_id'],
+                    'perihal' => $data['perihal'],
+                    'tanggal_surat' => $data['tanggal_surat'],
+                    'tanggal_diterima' => $data['tanggal_diterima'],
+                    'file_path' => $filePath,
+                    'file_size' => $fileSize,
+                    'mime_type' => $mimeType,
+                    'is_private' => $data['is_private'],
+                    'uploaded_by' => Auth::id(),
+                ]);
+
+                // increment counter
+                $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
+
+                // clear session data
+                session()->forget('failed_verification');
+
+                return redirect()->route('surat.manual.verification', [
+                    'status' => 'success',
+                    'surat_id' => $surat->id
+                ]);
+                
+            } else {
+                // masih ga sesuai - hapus file dan kembali ke re-edit
+                Storage::delete($filePath);
+                
+                // update session dengan error baru
+                $failedData = session('failed_verification');
+                $failedData['error_message'] = $verificationResult['error'];
+                $failedData['expected_nomor_surat'] = $nomorSurat;
+                $failedData['found_nomor_surat'] = $verificationResult['found_nomor'];
+                $failedData['extracted_text'] = $extractedText;
+                $failedData['ocr_error'] = $ocrError;
+                $failedData['original_filename'] = $originalName;
+                $failedData['data'] = $data; // update data dengan yang baru
+                
+                session(['failed_verification' => $failedData]);
+                
+                return redirect()->route('surat.manual.verification', ['status' => 'failed'])
+                    ->withErrors(['verification' => 'File masih belum sesuai. Silakan periksa kembali nomor surat di file.']);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error in manualReUpload: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+        }
     }
 
     /**

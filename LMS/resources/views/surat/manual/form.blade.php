@@ -172,6 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentLockData = null;
     let lastActivityTime = Date.now();
     let inactivityTimeout = null;
+    let debounceTimer = null; // Add debounce timer
     
     // ================================= UPDATE NOMOR SURAT =================================
     
@@ -217,18 +218,22 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
+            console.log('API response:', data);
             if (data.next_nomor_urut) {
                 const nomorUrut = String(data.next_nomor_urut).padStart(3, '0');
                 const nomorSurat = `${nomorUrut}/${divisiKode}/${jenisKode}/INTENS/${month}/${year}`;
                 
                 currentNomorSurat = nomorSurat;
+                console.log('currentNomorSurat set to:', currentNomorSurat);
                 nomorSuratDisplay.innerHTML = `<h4 class="text-success fw-bold mb-0">${nomorSurat}</h4>`;
                 copySection.style.display = 'block';
+                console.log('copySection displayed, element:', copySection);
                 uploadSection.style.display = 'block';
+                console.log('uploadSection displayed');
                 
                 console.log('Manual mode: generated nomor surat:', nomorSurat);
                 
-                // lock nomor surat ini
+                // lock nomor surat ini (simplified - no complex lock data needed)
                 lockNomorSurat(jenisSuratId, nomorUrut);
                 
                 trackActivity(); // reset timer aktivitas
@@ -245,6 +250,19 @@ document.addEventListener('DOMContentLoaded', function() {
             copySection.style.display = 'none';
             uploadSection.style.display = 'none';
         });
+    }
+    
+    // Debounced version untuk input yang sering berubah
+    function updateNomorSuratDebounced() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            updateNomorSurat();
+        }, 300); // 300ms debounce
+    }
+    
+    // Instant version untuk perubahan select/date
+    function updateNomorSuratInstant() {
+        updateNomorSurat();
     }
     
     // ================================= LOCK NOMOR SURAT =================================
@@ -412,35 +430,52 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Event listeners
-    jenisSuratSelect.addEventListener('change', updateNomorSurat);
+    jenisSuratSelect.addEventListener('change', function() {
+        console.log('Jenis surat changed to:', this.value);
+        updateNomorSuratInstant(); // Instant update for dropdown changes
+    });
     
-    // Real-time update untuk tanggal surat - sama seperti mode automatic
+    // Real-time update untuk tanggal surat
     tanggalSuratInput.addEventListener('change', function() {
-        updateNomorSurat();
+        console.log('Tanggal surat changed to:', this.value);
+        updateNomorSuratInstant(); // Instant update for date changes
     });
     
     // Real-time update saat user mengetik tanggal (dengan debounce)
     tanggalSuratInput.addEventListener('input', function() {
-        clearTimeout(window.dateInputDebounce);
-        window.dateInputDebounce = setTimeout(function() {
-            updateNomorSurat();
-        }, 300); // 300ms debounce untuk input typing
+        console.log('Tanggal surat input:', this.value);
+        updateNomorSuratDebounced(); // Debounced update for typing
     });
     
-    perihalInput.addEventListener('input', updateNomorSurat);
+    // Real-time update untuk perihal (dengan debounce)
+    perihalInput.addEventListener('input', function() {
+        console.log('Perihal input:', this.value);
+        updateNomorSuratDebounced(); // Debounced update for typing
+    });
     
     // File input change
     fileInput.addEventListener('change', function() {
         uploadBtn.disabled = !this.files.length;
         verificationResult.style.display = 'none';
+        console.log('File selected:', this.files.length > 0 ? this.files[0].name : 'none');
+        console.log('Upload button enabled:', !uploadBtn.disabled);
     });
     
     // Upload button click
     uploadBtn.addEventListener('click', function() {
-        if (!currentLockData || !fileInput.files.length) return;
+        if (!fileInput.files.length) {
+            alert('Pilih file dulu bro!');
+            return;
+        }
+        
+        if (!currentNomorSurat) {
+            alert('Generate nomor surat dulu sebelum upload!');
+            return;
+        }
         
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
+        formData.append('nomor_surat', currentNomorSurat);
         formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
         
         uploadBtn.disabled = true;
@@ -458,7 +493,14 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(data => {
-            if (data && data.success === false) {
+            if (data && data.success === true && data.redirect) {
+                // sukses upload dengan redirect
+                window.location.href = data.redirect;
+            } else if (data && data.success === false && data.redirect) {
+                // gagal verifikasi dengan redirect
+                window.location.href = data.redirect;
+            } else if (data && data.success === false && data.message) {
+                // error message biasa
                 verificationResult.className = 'alert alert-danger';
                 verificationResult.innerHTML = '<i class="fas fa-times-circle"></i> ' + data.message;
                 verificationResult.style.display = 'block';
@@ -468,26 +510,74 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('Upload error:', error);
             verificationResult.className = 'alert alert-danger';
-            verificationResult.innerHTML = '<i class="fas fa-times-circle"></i> Error uploading file';
+            verificationResult.innerHTML = '<i class="fas fa-times-circle"></i> Error upload file';
             verificationResult.style.display = 'block';
             
             uploadBtn.disabled = false;
             uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Verifikasi';
         });
     });
+    
+    // Initial check saat halaman load
+    setTimeout(function() {
+        if (jenisSuratSelect.value && tanggalSuratInput.value && perihalInput.value.trim()) {
+            updateNomorSuratInstant();
+        }
+    }, 500); // Small delay to ensure everything is loaded
 });
 
 function copyNomorSurat() {
-    navigator.clipboard.writeText(currentNomorSurat).then(function() {
+    console.log('copyNomorSurat called, currentNomorSurat:', currentNomorSurat);
+    if (!currentNomorSurat) {
+        alert('Belum ada nomor surat yang digenerate');
+        return;
+    }
+    
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(currentNomorSurat).then(function() {
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 2000);
+        }).catch(function(err) {
+            console.error('Clipboard API failed:', err);
+            fallbackCopyToClipboard(currentNomorSurat);
+        });
+    } else {
+        // Fallback for older browsers or non-secure contexts
+        fallbackCopyToClipboard(currentNomorSurat);
+    }
+}
+
+function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
         const btn = event.target.closest('button');
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
         setTimeout(() => {
             btn.innerHTML = originalText;
         }, 2000);
-    });
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+        alert('Copy gagal. Nomor surat: ' + text);
+    }
+    
+    document.body.removeChild(textArea);
 }
 </script>
 @endsection
