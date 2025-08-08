@@ -11,10 +11,17 @@ Route::get('/', function () {
 
 Auth::routes(['reset' => false]);
 
+// ================================= MIDDLEWARE AUTH =================================
+
 Route::middleware(['auth', 'active'])->group(function () {
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 
-    // Surat routes
+    // ================================= SURAT MODE SELECTION =================================
+    
+    Route::get('/surat/mode-selection', [App\Http\Controllers\SuratController::class, 'showModeSelection'])->name('surat.mode.selection');
+    
+    // ================================= SURAT AUTOMATIC MODE =================================
+    
     Route::get('/surat/upload', [App\Http\Controllers\SuratController::class, 'showUploadForm'])->name('surat.upload');
     Route::post('/surat/upload', [App\Http\Controllers\SuratController::class, 'handleUpload'])->name('surat.handleUpload');
     Route::get('/surat/confirm', [App\Http\Controllers\SuratController::class, 'showConfirmForm'])->name('surat.confirm');
@@ -27,28 +34,36 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
     Route::get('/surat/get-users-for-access', [App\Http\Controllers\SuratController::class, 'getUsersForAccess'])->name('surat.getUsersForAccess');
     Route::get('/surat', [App\Http\Controllers\SuratController::class, 'index'])->name('surat.index');
     
-    // Route untuk serve file surat dengan permission check
-    Route::get('/surat/file/{id}', [App\Http\Controllers\SuratController::class, 'serveFile'])->name('surat.file');
+    // ================================= SURAT MANUAL MODE =================================
     
-    // Route untuk download file surat
+    Route::get('/surat/manual/form', [App\Http\Controllers\SuratController::class, 'showManualForm'])->name('surat.manual.form');
+    Route::post('/surat/manual/generate', [App\Http\Controllers\SuratController::class, 'manualGenerate'])->name('surat.manual.generate');
+    Route::post('/surat/manual/upload', [App\Http\Controllers\SuratController::class, 'manualHandleUpload'])->name('surat.manual.handleUpload');
+    
+    // ================================= FILE SERVE & DOWNLOAD =================================
+    
+    Route::get('/surat/file/{id}', [App\Http\Controllers\SuratController::class, 'serveFile'])->name('surat.file');
     Route::get('/surat/download/{id}', [App\Http\Controllers\SuratController::class, 'downloadFile'])->name('surat.download');
     
-    // API routes for dynamic functionality
+    // ================================= API ROUTES =================================
+    
+    // API next nomor urut
     Route::match(['GET', 'POST'], '/api/next-nomor-urut', function (Request $request) {
         $divisiId = $request->input('divisi_id');
         $jenisSuratId = $request->input('jenis_surat_id');
+        $tanggalSurat = $request->input('tanggal_surat');
         
         if (!$divisiId || !$jenisSuratId) {
             return response()->json(['error' => 'Divisi ID dan Jenis Surat ID diperlukan'], 400);
         }
         
         $controller = new \App\Http\Controllers\SuratController();
-        $nextNomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId);
+        $nextNomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat);
         
         return response()->json(['next_nomor_urut' => $nextNomorUrut]);
     })->middleware('auth');
     
-    // API route for getting jenis surat by division
+    // API jenis surat by division
     Route::get('/api/jenis-surat-by-division', function (Request $request) {
         $divisiId = $request->get('divisi_id');
         
@@ -65,49 +80,101 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
         return response()->json(['jenis_surat' => $jenisSurat]);
     })->middleware('auth');
     
-    // API route for getting non-admin users (for private surat selection)
+    // API get users non-admin
     Route::get('/api/users', function () {
         $users = \App\Models\User::select('id', 'username', 'full_name', 'email')
             ->where('is_active', true)
-            ->where('is_admin', false) // Exclude admin users
-            ->where('id', '!=', \Auth::id()) // Exclude current user (pengupload)
+            ->where('is_admin', false) // exclude admin
+            ->where('id', '!=', \Auth::id()) // exclude current user
             ->orderBy('full_name')
             ->get();
         
         return response()->json($users);
     })->middleware('auth');
     
+    // API lock nomor urut
     Route::get('/api/lock-nomor-urut', function (Request $request) {
         $divisiId = $request->get('divisi_id');
         $jenisSuratId = $request->get('jenis_surat_id');
+        $tanggalSurat = $request->get('tanggal_surat');
         
         if (!$divisiId || !$jenisSuratId) {
             return response()->json(['error' => 'Missing required parameters'], 400);
         }
         
-        // Clean up expired locks first
+        // cleanup lock expired
         \App\Models\NomorUrutLock::cleanupExpiredLocks();
         
+        \Log::info('Lock API called:', [
+            'user_id' => \Auth::id(),
+            'divisi_id' => $divisiId,
+            'jenis_surat_id' => $jenisSuratId,
+            'tanggal_surat' => $tanggalSurat
+        ]);
+        
+        // hapus lock user untuk prevent duplikat
+        $deletedLocks = \App\Models\NomorUrutLock::where('user_id', \Auth::id())->delete();
+        
+        \Log::info('User locks cleaned:', [
+            'user_id' => \Auth::id(),
+            'deleted_count' => $deletedLocks
+        ]);
+        
         $controller = new App\Http\Controllers\SuratController();
-        $nomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId);
+        $nomorUrut = $controller->getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat);
+        
+        // get month-year untuk lock
+        $monthYear = $tanggalSurat ? 
+            \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
+            \Carbon\Carbon::now()->format('Y-m');
         
         if ($nomorUrut) {
-            // Check if this nomor is locked by another user
-            if (\App\Models\NomorUrutLock::isLockedByOtherUser($divisiId, $jenisSuratId, $nomorUrut, \Auth::id())) {
+            // cek nomor urut di-lock user lain
+            if (\App\Models\NomorUrutLock::isLockedByOtherUser($divisiId, $jenisSuratId, $nomorUrut, \Auth::id(), $monthYear)) {
                 return response()->json([
                     'error' => 'Nomor urut ini sedang digunakan oleh pengguna lain',
                     'nomor_urut' => null
                 ], 409);
             }
             
-            // Create or extend lock for 30 minutes
-            \App\Models\NomorUrutLock::createOrExtendLock($divisiId, $jenisSuratId, $nomorUrut, \Auth::id());
+            // create atau extend lock 30 menit
+            $lock = \App\Models\NomorUrutLock::createOrExtendLock($divisiId, $jenisSuratId, $nomorUrut, \Auth::id(), $monthYear);
+            
+            \Log::info('Lock created/extended:', [
+                'lock_id' => $lock->id,
+                'user_id' => \Auth::id(),
+                'nomor_urut' => $nomorUrut,
+                'month_year' => $monthYear
+            ]);
         }
         
         return response()->json(['nomor_urut' => $nomorUrut]);
     });
     
-    // New route to extend/keep alive the lock
+    // API preview nomor urut tanpa lock
+    Route::get('/api/preview-nomor-urut', function (Request $request) {
+        $divisiId = $request->get('divisi_id');
+        $jenisSuratId = $request->get('jenis_surat_id');
+        $tanggalSurat = $request->get('tanggal_surat');
+        
+        if (!$divisiId || !$jenisSuratId || !$tanggalSurat) {
+            return response()->json(['error' => 'Missing required parameters'], 400);
+        }
+        
+        try {
+            $date = new DateTime($tanggalSurat);
+            $year = $date->format('Y');
+            $month = $date->format('m');
+            
+            $counter = \App\Models\JenisSuratCounter::peekNextForMonth($jenisSuratId, $year, $month);
+            
+            return response()->json(['nomor_urut' => $counter]);
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Invalid date format'], 400);
+        }
+    });
+    
+    // API extend/keep alive lock
     Route::post('/api/extend-nomor-urut-lock', function (Request $request) {
         $divisiId = $request->get('divisi_id');
         $jenisSuratId = $request->get('jenis_surat_id');
@@ -120,20 +187,20 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
         ]);
     });
     
-    // New heartbeat endpoint to check if user is still active
+    // API heartbeat untuk cek user aktif
     Route::post('/api/heartbeat-nomor-urut-lock', function () {
         $userId = \Auth::id();
         
-        // Update last activity for user's locks
+        // update last activity user locks
         $updated = \App\Models\NomorUrutLock::where('user_id', $userId)
             ->update(['locked_until' => now()->addMinutes(30)]);
         
-        // Cleanup expired locks from other users
+        // cleanup lock expired dari user lain
         $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
         
-        // Also cleanup orphaned locks (older than 1 hour) occasionally
+        // cleanup orphaned locks kadang-kadang
         $orphanedCleaned = 0;
-        if (rand(1, 10) === 1) { // 10% chance to run orphaned cleanup
+        if (rand(1, 10) === 1) { // 10% chance
             $orphanedCleaned = \App\Models\NomorUrutLock::cleanupOrphanedLocks();
         }
         
@@ -146,7 +213,7 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
         ]);
     });
     
-    // Manual cleanup endpoint for admin
+    // API manual cleanup untuk admin
     Route::post('/api/cleanup-all-nomor-urut-locks', function () {
         $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
         $orphanedCleaned = \App\Models\NomorUrutLock::cleanupOrphanedLocks();
@@ -155,22 +222,23 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
             'success' => true,
             'cleaned_expired' => $expiredCleaned,
             'cleaned_orphaned' => $orphanedCleaned,
-            'message' => "Cleaned up {$expiredCleaned} expired and {$orphanedCleaned} orphaned locks"
+            'message' => "Cleaned {$expiredCleaned} expired dan {$orphanedCleaned} orphaned locks"
         ]);
     })->middleware(['active', 'admin']);
     
+    // API cancel lock
     Route::match(['GET', 'POST'], '/api/cancel-nomor-urut-lock', function () {
         $userId = \Auth::id();
         
-        // Cancel user's locks
+        // cancel user locks
         $cancelled = \App\Models\NomorUrutLock::cancelUserLocks($userId);
         
-        // Immediate cleanup of expired locks (triggered by user action)
+        // cleanup expired locks
         $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
         
-        // Log the cleanup activity
+        // log cleanup activity
         if ($cancelled > 0 || $expiredCleaned > 0) {
-            \Log::info('Lock cleanup triggered by user cancel', [
+            \Log::info('Lock cleanup by user cancel', [
                 'user_id' => $userId,
                 'cancelled_user_locks' => $cancelled,
                 'cleaned_expired_locks' => $expiredCleaned
@@ -185,17 +253,18 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
     });
 });
 
-// Admin Routes
+// ================================= ADMIN ROUTES =================================
+
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
     
-    // Surat Management
+    // surat management
     Route::get('/surat', [AdminController::class, 'suratIndex'])->name('surat.index');
     Route::get('/surat/{id}/edit', [AdminController::class, 'suratEdit'])->name('surat.edit');
     Route::put('/surat/{id}', [AdminController::class, 'suratUpdate'])->name('surat.update');
     Route::delete('/surat/{id}', [AdminController::class, 'suratDestroy'])->name('surat.destroy');
     
-    // User Management
+    // user management
     Route::get('/users', [AdminController::class, 'usersIndex'])->name('users.index');
     Route::get('/users/create', [AdminController::class, 'usersCreate'])->name('users.create');
     Route::post('/users', [AdminController::class, 'usersStore'])->name('users.store');
@@ -203,7 +272,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::put('/users/{id}', [AdminController::class, 'usersUpdate'])->name('users.update');
     Route::delete('/users/{id}', [AdminController::class, 'usersDestroy'])->name('users.destroy');
     
-    // Division Management
+    // division management
     Route::get('/divisions', [AdminController::class, 'divisionsIndex'])->name('divisions.index');
     Route::get('/divisions/create', [AdminController::class, 'divisionsCreate'])->name('divisions.create');
     Route::post('/divisions', [AdminController::class, 'divisionsStore'])->name('divisions.store');
@@ -211,7 +280,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::put('/divisions/{id}', [AdminController::class, 'divisionsUpdate'])->name('divisions.update');
     Route::delete('/divisions/{id}', [AdminController::class, 'divisionsDestroy'])->name('divisions.destroy');
     
-    // Jenis Surat Management
+    // jenis surat management
     Route::get('/jenis-surat', [AdminController::class, 'jenisSuratIndex'])->name('jenis-surat.index');
     Route::get('/jenis-surat/create', [AdminController::class, 'jenisSuratCreate'])->name('jenis-surat.create');
     Route::post('/jenis-surat', [AdminController::class, 'jenisSuratStore'])->name('jenis-surat.store');
@@ -219,10 +288,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::put('/jenis-surat/{id}', [AdminController::class, 'jenisSuratUpdate'])->name('jenis-surat.update');
     Route::delete('/jenis-surat/{id}', [AdminController::class, 'jenisSuratDestroy'])->name('jenis-surat.destroy');
     
-    // Reset Counter Routes (for testing)
+    // reset counter untuk testing
     Route::post('/jenis-surat/{id}/reset-counter', [AdminController::class, 'resetJenisSuratCounter'])->name('jenis-surat.reset-counter');
     Route::post('/jenis-surat/reset-all-counters', [AdminController::class, 'resetAllCounters'])->name('jenis-surat.reset-all-counters');
 });
+
+// ================================= ADMIN SURAT ROUTES =================================
 
 Route::middleware(['auth', 'active', 'admin'])->group(function() {
     Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'showUploadForm'])->name('admin.surat.upload');

@@ -8,30 +8,18 @@ use Illuminate\Support\Facades\DB;
 
 class CleanupDuplicateLocks extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
+    // ================================= COMMAND SETTINGS =================================
+    
     protected $signature = 'locks:cleanup-duplicates';
+    protected $description = 'Bersihin lock nomor urut yang duplikat';
 
-    /**
-     * The description of the console command.
-     *
-     * @var string
-     */
-    protected $description = 'Clean up duplicate nomor urut locks for users';
+    // ================================= FUNGSI UTAMA =================================
 
-    /**
-     * Execute the console command.
-     *
-     * @return int
-     */
     public function handle()
     {
-        $this->info('Starting cleanup of duplicate nomor urut locks...');
+        $this->info('Mulai bersihin lock duplikat...');
         
-        // Find users with multiple locks in the same division
+        // cari user yang punya multiple locks di divisi yang sama
         $duplicates = DB::table('nomor_urut_locks')
             ->select('user_id', 'divisi_id', DB::raw('COUNT(*) as lock_count'))
             ->groupBy('user_id', 'divisi_id')

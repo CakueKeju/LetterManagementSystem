@@ -13,10 +13,14 @@ class Division extends Model
 
     public $timestamps = false;
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'kode_divisi',
         'nama_divisi',
     ];
+
+    // ================================= RELASI =================================
 
     public function users(): HasMany
     {
@@ -37,6 +41,8 @@ class Division extends Model
     {
         return $query;
     }
+
+    // ================================= METHODS =================================
 
     public function getNextNomorUrut(): int
     {

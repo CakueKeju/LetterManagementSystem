@@ -1,6 +1,52 @@
 @extends('layouts.app')
 
 @section('content')
+<style>
+.action-buttons .btn {
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    font-size: 19px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-width: 1.5px;
+    background-color: transparent;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1;
+    font-weight: bold;
+    transform: translateY(-1px);
+}
+
+.action-buttons .btn:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.action-buttons .btn-outline-warning {
+    border-color: #ffc107;
+    color: #ffc107;
+}
+
+.action-buttons .btn-outline-warning:hover {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: black !important;
+}
+
+.action-buttons .btn-outline-danger {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.action-buttons .btn-outline-danger:hover {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white !important;
+}
+</style>
+
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-md-12">
@@ -96,16 +142,17 @@
                                             @endif
                                         </td>
                                         <td>
-                                            <div class="btn-group" role="group">
-                                                <a href="{{ route('admin.users.edit', $user->id) }}" class="btn btn-sm btn-primary" title="Edit">
-                                                    <i class="fa-solid fa-pen"></i> Edit
+                                            <div class="d-flex gap-1 action-buttons">
+                                                <a href="{{ route('admin.users.edit', $user->id) }}" 
+                                                   class="btn btn-sm btn-outline-warning" title="Edit User">
+                                                    &#9998;
                                                 </a>
                                                 @if($user->id !== Auth::id())
                                                     <form method="POST" action="{{ route('admin.users.destroy', $user->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus user ini?')">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <button type="submit" class="btn btn-sm btn-danger" title="Hapus">
-                                                            <i class="fa-solid fa-trash"></i> Hapus
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus User">
+                                                            &#128465;
                                                         </button>
                                                     </form>
                                                 @endif

@@ -8,36 +8,36 @@ use PhpOffice\PhpWord\TemplateProcessor;
 
 trait DocumentProcessor
 {
-    /**
-     * Fill PDF with nomor surat by detecting and replacing placeholder text
-     */
+    // ================================= PROSES PDF =================================
+    
+    // isi PDF dengan nomor surat, deteksi dan ganti placeholder text
     private function fillPdfWithNomorSurat($pdfPath, $nomorSurat)
     {
         try {
-            \Log::info('Starting PDF fill process:', [
+            \Log::info('Mulai proses isi PDF:', [
                 'pdf_path' => $pdfPath,
                 'nomor_surat' => $nomorSurat,
                 'file_exists' => file_exists($pdfPath)
             ]);
             
-            // Parse PDF untuk detect text dan koordinat
+            // parse PDF buat deteksi text dan koordinat
             $parser = new Parser();
             $pdf = $parser->parseFile($pdfPath);
             
-            \Log::info('PDF parsed successfully, pages count: ' . count($pdf->getPages()));
+            \Log::info('PDF berhasil di-parse, jumlah halaman: ' . count($pdf->getPages()));
             
-            // Improved placeholder patterns - more flexible and comprehensive
+            // pattern placeholder yang lebih fleksibel
             $placeholderPatterns = [
-                // Exact match for the format found in the PDF
+                // match persis format yang ada di PDF
                 '/Nomor:\s*…\/…\/…\.\/…\.\/…\.\/…\./i',
                 '/Nomor:\s*…\/…\/…\/…\/…\/…/i',
                 '/Nomor:\s*\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\.\/\.\.\./i',
                 
-                // Standard format patterns
+                // pattern format standar
                 '/(?:Nomor\s*:?\s*)?(\d{3}\/)?([A-Z]+\/)?([A-Z]+\/)?(?:INTENS\/)?(\d{2}\/)?(\d{4})?/i',
                 '/(?:Nomor\s*:?\s*)?(\d{1,3}\/)?([A-Z]+\/)?([A-Z]+\/)?(?:INTENS\/)?(\d{1,2}\/)?(\d{4})?/i',
                 
-                // Placeholder patterns with dots
+                // pattern placeholder dengan titik
                 '/(?:Nomor\s*:?\s*)?(\.{3,5}\/)?(\.{3,5}\/)?(\.{3,5}\/)?(?:INTENS\/)?(\.{2,5}\/)?(\.{4,5})?/i',
                 '/(?:Nomor\s*:?\s*)?(\.{1,5}\/)?(\.{1,5}\/)?(\.{1,5}\/)?(?:INTENS\/)?(\.{1,5}\/)?(\.{1,5})?/i',
                 

@@ -1,6 +1,52 @@
 @extends('layouts.app')
 
 @section('content')
+<style>
+.action-buttons .btn {
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    font-size: 16px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-width: 1.5px;
+    background-color: transparent;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1;
+    font-weight: bold;
+}
+
+.action-buttons .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.action-buttons .btn-outline-primary {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.action-buttons .btn-outline-primary:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white !important;
+}
+
+.action-buttons .btn-outline-success {
+    border-color: #198754;
+    color: #198754;
+}
+
+.action-buttons .btn-outline-success:hover {
+    background-color: #198754;
+    border-color: #198754;
+    color: white !important;
+}
+</style>
+
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-md-12">
@@ -109,15 +155,14 @@
                                                         <th>Divisi</th>
                                                         <th>Status</th>
                                                         <th>Tanggal</th>
+                                                        <th>Aksi</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     @foreach($recentSurat as $surat)
                                                     <tr>
                                                         <td>
-                                                            <a href="{{ route('admin.surat.edit', $surat->id) }}" class="text-decoration-none">
-                                                                {{ $surat->nomor_surat }}
-                                                            </a>
+                                                            <strong>{{ $surat->nomor_surat_display }}</strong>
                                                         </td>
                                                         <td>{{ Str::limit($surat->perihal, 30) }}</td>
                                                         <td>{{ $surat->uploader->full_name ?? 'N/A' }}</td>
@@ -130,6 +175,18 @@
                                                             @endif
                                                         </td>
                                                         <td>{{ $surat->created_at->format('d/m/Y H:i') }}</td>
+                                                        <td>
+                                                            <div class="d-flex gap-1 action-buttons">
+                                                                <a href="{{ route('surat.file', $surat->id) }}" target="_blank" 
+                                                                   class="btn btn-sm btn-outline-primary" title="Lihat Surat">
+                                                                    &#128065;
+                                                                </a>
+                                                                <a href="{{ route('surat.download', $surat->id) }}" 
+                                                                   class="btn btn-sm btn-outline-success" title="Download Surat">
+                                                                    &#8595;
+                                                                </a>
+                                                            </div>
+                                                        </td>
                                                     </tr>
                                                     @endforeach
                                                 </tbody>

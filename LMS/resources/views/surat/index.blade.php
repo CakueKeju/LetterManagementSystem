@@ -63,7 +63,7 @@
             @forelse($letters as $i => $surat)
                 <tr>
                     <td>{{ $letters->firstItem() + $i }}</td>
-                    <td>{{ $surat->nomor_surat }}</td>
+                    <td>{{ $surat->nomor_surat_display }}</td>
                     <td>{{ $surat->perihal }}</td>
                     <td>{{ $surat->division->nama_divisi }}</td>
                     <td>{{ $surat->jenisSurat->nama_jenis }}</td>

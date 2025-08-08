@@ -1,6 +1,74 @@
 @extends('layouts.app')
 
 @section('content')
+<style>
+.action-buttons .btn {
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    font-size: 19px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-width: 1.5px;
+    background-color: transparent;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1;
+    font-weight: bold;
+    transform: translateY(-1px);
+}
+
+.action-buttons .btn:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.action-buttons .btn-outline-primary {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.action-buttons .btn-outline-primary:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white !important;
+}
+
+.action-buttons .btn-outline-success {
+    border-color: #198754;
+    color: #198754;
+}
+
+.action-buttons .btn-outline-success:hover {
+    background-color: #198754;
+    border-color: #198754;
+    color: white !important;
+}
+
+.action-buttons .btn-outline-warning {
+    border-color: #ffc107;
+    color: #ffc107;
+}
+
+.action-buttons .btn-outline-warning:hover {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: black !important;
+}
+
+.action-buttons .btn-outline-danger {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.action-buttons .btn-outline-danger:hover {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white !important;
+}
+</style>
+
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-md-12">
@@ -88,7 +156,7 @@
                                     @foreach($surat as $s)
                                     <tr>
                                         <td>
-                                            <strong>{{ $s->nomor_surat }}</strong>
+                                            <strong>{{ $s->nomor_surat_display }}</strong>
                                         </td>
                                         <td>{{ Str::limit($s->perihal, 50) }}</td>
                                         <td>{{ $s->division->nama_divisi ?? 'N/A' }}</td>
@@ -110,15 +178,24 @@
                                             @endif
                                         </td>
                                         <td>
-                                            <div class="btn-group" role="group">
-                                                <a href="{{ route('admin.surat.edit', $s->id) }}" class="btn btn-sm btn-primary" title="Edit">
-                                                    <i class="fa-solid fa-pen"></i> Edit
+                                            <div class="d-flex gap-1 action-buttons">
+                                                <a href="{{ route('surat.file', $s->id) }}" target="_blank" 
+                                                   class="btn btn-sm btn-outline-primary" title="Lihat Surat">
+                                                    &#128065;
+                                                </a>
+                                                <a href="{{ route('surat.download', $s->id) }}" 
+                                                   class="btn btn-sm btn-outline-success" title="Download Surat">
+                                                    &#8595;
+                                                </a>
+                                                <a href="{{ route('admin.surat.edit', $s->id) }}" 
+                                                   class="btn btn-sm btn-outline-warning" title="Edit Surat">
+                                                    &#9998;
                                                 </a>
                                                 <form method="POST" action="{{ route('admin.surat.destroy', $s->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus surat ini?')">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button type="submit" class="btn btn-sm btn-danger" title="Hapus">
-                                                        <i class="fa-solid fa-trash"></i> Hapus
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Surat">
+                                                        &#128465;
                                                     </button>
                                                 </form>
                                             </div>

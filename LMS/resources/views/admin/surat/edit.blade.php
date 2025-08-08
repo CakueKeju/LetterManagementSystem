@@ -33,7 +33,7 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="nomor_surat" class="form-label">Nomor Surat (Otomatis)</label>
-                                    <input type="text" class="form-control" id="nomor_surat" value="{{ $surat->nomor_surat }}" readonly>
+                                    <input type="text" class="form-control" id="nomor_surat" value="{{ $surat->nomor_surat_display }}" readonly>
                                     <small class="text-muted">Nomor surat akan di-generate otomatis berdasarkan nomor urut, divisi, dan jenis surat</small>
                                 </div>
                             </div>

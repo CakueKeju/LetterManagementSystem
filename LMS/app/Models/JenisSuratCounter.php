@@ -12,6 +12,8 @@ class JenisSuratCounter extends Model
 
     protected $table = 'counters';
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'jenis_surat_id',
         'month_year',
@@ -23,14 +25,16 @@ class JenisSuratCounter extends Model
         'counter' => 'integer',
     ];
 
+    // ================================= RELASI =================================
+
     public function jenisSurat(): BelongsTo
     {
         return $this->belongsTo(JenisSurat::class, 'jenis_surat_id');
     }
 
-    /**
-     * Get or create counter for specific month
-     */
+    // ================================= STATIC METHODS =================================
+
+    // get atau create counter untuk bulan tertentu
     public static function getOrCreateCounter($jenisSuratId, $monthYear)
     {
         return static::firstOrCreate([
@@ -41,9 +45,8 @@ class JenisSuratCounter extends Model
         ]);
     }
 
-    /**
-     * Increment counter for specific month and return new value
-     */
+    // increment counter untuk bulan tertentu dan return nilai baru
+    // fungsi ini juga sync dengan data surat untuk prevent inconsistency
     public static function incrementForMonth($jenisSuratId, $monthYear)
     {
         return \DB::transaction(function () use ($jenisSuratId, $monthYear) {
@@ -52,19 +55,38 @@ class JenisSuratCounter extends Model
                 ->where('month_year', $monthYear)
                 ->first();
 
+            // cek nomor urut max dari tabel surat  
+            [$year, $month] = explode('-', $monthYear);
+            $maxNomorUrut = \App\Models\Surat::where('jenis_surat_id', $jenisSuratId)
+                ->whereYear('tanggal_surat', $year)
+                ->whereMonth('tanggal_surat', $month)
+                ->max('nomor_urut');
+
             if (!$counter) {
+                // Create new counter, sync with actual max nomor_urut
+                $newCounterValue = max(1, ($maxNomorUrut ?: 0) + 1);
                 $counter = static::create([
                     'jenis_surat_id' => $jenisSuratId,
                     'month_year' => $monthYear,
-                    'counter' => 1
+                    'counter' => $newCounterValue
                 ]);
-                return 1;
+                
+                \Log::info("Created new counter for JenisSurat {$jenisSuratId} month {$monthYear}: {$newCounterValue}");
+                return $newCounterValue;
             }
 
-            $newCounter = $counter->counter + 1;
+            // Use the higher value between counter table and actual max nomor_urut
+            $syncedValue = max($counter->counter, $maxNomorUrut ?: 0);
+            $newCounter = $syncedValue + 1;
+            
             $counter->update(['counter' => $newCounter]);
             
-            \Log::info("Incremented counter for JenisSurat {$jenisSuratId} month {$monthYear} to {$newCounter}");
+            \Log::info("Incremented counter for JenisSurat {$jenisSuratId} month {$monthYear}:", [
+                'old_counter' => $counter->counter,
+                'actual_max_nomor_urut' => $maxNomorUrut,
+                'synced_value' => $syncedValue,
+                'new_counter' => $newCounter
+            ]);
             
             return $newCounter;
         });
@@ -72,14 +94,35 @@ class JenisSuratCounter extends Model
 
     /**
      * Peek next counter for specific month without incrementing
+     * This method checks both counter table AND actual surat data to avoid inconsistency
      */
     public static function peekNextForMonth($jenisSuratId, $monthYear)
     {
+        // Get counter from counter table
         $counter = static::where('jenis_surat_id', $jenisSuratId)
             ->where('month_year', $monthYear)
             ->first();
 
-        return $counter ? $counter->counter + 1 : 1;
+        $counterValue = $counter ? $counter->counter : 0;
+        
+        // Also check actual surat data to prevent inconsistency
+        [$year, $month] = explode('-', $monthYear);
+        $maxNomorUrut = \App\Models\Surat::where('jenis_surat_id', $jenisSuratId)
+            ->whereYear('tanggal_surat', $year)
+            ->whereMonth('tanggal_surat', $month)
+            ->max('nomor_urut');
+            
+        // Use the higher value to prevent conflicts
+        $actualMax = max($counterValue, $maxNomorUrut ?: 0);
+        
+        \Log::info("Peek counter comparison for JenisSurat {$jenisSuratId} month {$monthYear}:", [
+            'counter_table_value' => $counterValue,
+            'actual_max_nomor_urut' => $maxNomorUrut,
+            'using_value' => $actualMax,
+            'next_value' => $actualMax + 1
+        ]);
+        
+        return $actualMax + 1;
     }
 
     /**

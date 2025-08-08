@@ -68,7 +68,7 @@
         </button>
         
         <div>
-            <a href="{{ route('surat.mode.selection') }}" class="btn btn-warning">
+            <a href="{{ route('surat.upload') }}" class="btn btn-warning">
                 <i class="fas fa-upload"></i> Upload Ulang
             </a>
             <form action="{{ route('surat.store-from-preview') }}" method="POST" style="display: inline;">

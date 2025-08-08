@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use App\Models\JenisSurat;
 use Carbon\Carbon;
 
-class ResetSuratCounter extends Command
+class CounterStatus extends Command
 {
     /**
      * The name and signature of the console command.

@@ -17,6 +17,8 @@ class JenisSurat extends Model
 
     protected $table = 'jenis_surat';
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'divisi_id',
         'kode_jenis',
@@ -31,6 +33,8 @@ class JenisSurat extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    // ================================= RELASI =================================
 
     public function surat(): HasMany
     {

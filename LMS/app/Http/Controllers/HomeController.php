@@ -11,42 +11,36 @@ use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
+    // ================================= CONSTRUCTOR =================================
+    
     public function __construct()
     {
         $this->middleware('auth');
     }
 
-    /**
-     * Show the application dashboard.
-     *
-     * @return \Illuminate\Contracts\Support\Renderable
-     */
+    // ================================= DASHBOARD UTAMA =================================
+    
     public function index(Request $request)
     {
         $query = Surat::query();
 
-        // Filter based on user access
+        // filter berdasarkan akses user
         $user = Auth::user();
         
-        // Admin can see all surat
+        // admin bisa lihat semua surat
         if (!$user->is_admin) {
-            // Non-admin: Show public surat from same division OR private surat that user has access to
+            // non-admin: lihat surat publik dari divisi sama ATAU surat privat yang bisa diakses
             $query->where(function($q) use ($user) {
-                // Public surat from same division
+                // surat publik dari divisi sama
                 $q->where(function($subQ) use ($user) {
                     $subQ->where('is_private', false)
                          ->where('divisi_id', $user->divisi_id);
                 });
                 
-                // OR private surat that user uploaded
+                // ATAU surat privat yang user upload sendiri
                 $q->orWhere('uploaded_by', $user->id);
                 
-                // OR private surat that user has access to
+                // ATAU surat privat yang user punya akses
                 $q->orWhereExists(function($existsQuery) use ($user) {
                     $existsQuery->select(\DB::raw(1))
                                ->from('surat_access')

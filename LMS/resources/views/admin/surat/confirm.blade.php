@@ -140,6 +140,15 @@
 </div>
 
 <script>
+// Convert month number to Roman numeral
+function monthToRoman(month) {
+    const romanNumerals = {
+        1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI',
+        7: 'VII', 8: 'VIII', 9: 'IX', 10: 'X', 11: 'XI', 12: 'XII'
+    };
+    return romanNumerals[month] || month;
+}
+
 // Real-time nomor surat preview update
 function updateNomorSuratPreview() {
     var divisiSelect = document.getElementById('divisi_id');
@@ -150,7 +159,7 @@ function updateNomorSuratPreview() {
     var jenisSuratId = jenisSelect.value;
     var kodeJenis = jenisSelect.selectedOptions[0] ? jenisSelect.selectedOptions[0].getAttribute('data-kode') : '...';
     var tgl = tanggalSurat ? new Date(tanggalSurat) : null;
-    var bulan = tgl && !isNaN(tgl.getMonth()) ? (tgl.getMonth()+1).toString().padStart(2, '0') : '...';
+    var bulan = tgl && !isNaN(tgl.getMonth()) ? monthToRoman(tgl.getMonth() + 1) : '...';
     var tahun = tgl && !isNaN(tgl.getFullYear()) ? tgl.getFullYear() : '...';
     
     // Get next nomor urut if both divisi and jenis surat are selected

@@ -12,10 +12,13 @@ class NomorUrutLock extends Model
 {
     use HasFactory;
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'divisi_id',
         'jenis_surat_id',
         'nomor_urut',
+        'month_year',
         'user_id',
         'locked_until'
     ];
@@ -27,6 +30,8 @@ class NomorUrutLock extends Model
         'nomor_urut' => 'integer',
         'user_id' => 'integer',
     ];
+
+    // ================================= RELASI =================================
 
     public function division(): BelongsTo
     {
@@ -43,12 +48,19 @@ class NomorUrutLock extends Model
         return $this->belongsTo(User::class);
     }
     
-    public static function createOrExtendLock(int $divisiId, int $jenisSuratId, int $nomorUrut, int $userId): self
+    // ================================= STATIC METHODS =================================
+    
+    public static function createOrExtendLock(int $divisiId, int $jenisSuratId, int $nomorUrut, int $userId, string $monthYear = null): self
     {
+        if (!$monthYear) {
+            $monthYear = now()->format('Y-m');
+        }
+        
         return static::updateOrCreate([
             'divisi_id' => $divisiId,
             'jenis_surat_id' => $jenisSuratId,
             'nomor_urut' => $nomorUrut,
+            'month_year' => $monthYear,
         ], [
             'user_id' => $userId,
             'locked_until' => now()->addMinutes(30),
@@ -103,11 +115,16 @@ class NomorUrutLock extends Model
         return $deleted;
     }
     
-    public static function isLockedByOtherUser(int $divisiId, int $jenisSuratId, int $nomorUrut, int $userId): bool
+    public static function isLockedByOtherUser(int $divisiId, int $jenisSuratId, int $nomorUrut, int $userId, string $monthYear = null): bool
     {
+        if (!$monthYear) {
+            $monthYear = now()->format('Y-m');
+        }
+        
         return static::where('divisi_id', $divisiId)
             ->where('jenis_surat_id', $jenisSuratId)
             ->where('nomor_urut', $nomorUrut)
+            ->where('month_year', $monthYear)
             ->where('user_id', '!=', $userId)
             ->where('locked_until', '>', now())
             ->exists();

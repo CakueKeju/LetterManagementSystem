@@ -16,26 +16,32 @@ use App\Models\NomorUrutLock;
 use PhpOffice\PhpWord\TemplateProcessor;
 use setasign\Fpdi\Fpdi;
 use App\Traits\DocumentProcessor;
+use App\Traits\RomanNumeralConverter;
 
 class SuratController extends Controller
 {
     use DocumentProcessor;
+    use RomanNumeralConverter;
 
-    // Show the upload form
+    // ================================= FORM UPLOAD =================================
+    
+    // tampilkan form upload
     public function showUploadForm()
     {
         $user = Auth::user();
         $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->get();
         
-        return view('surat.upload', compact('jenisSurat'));
+        return view('surat.automatic.form', compact('jenisSurat'));
     }
 
-    // Handle file upload and text extraction
+    // ================================= HANDLE UPLOAD =================================
+    
+    // proses upload file dan ekstrak teks
     public function handleUpload(Request $request)
     {
         try {
         $request->validate([
-                'file' => 'required|file|mimes:pdf,doc,docx|max:10240', // 10MB max
+                'file' => 'required|file|mimes:pdf,doc,docx|max:10240', // maks 10MB
                 'jenis_surat_id' => 'required|exists:jenis_surat,id',
         ]);
 
@@ -45,21 +51,21 @@ class SuratController extends Controller
         $mimeType = $file->getMimeType();
             $jenisSuratId = $request->input('jenis_surat_id');
             
-            \Log::info('File upload started:', [
+            \Log::info('File upload dimulai:', [
                 'original_name' => $originalName,
                 'file_size' => $fileSize,
                 'mime_type' => $mimeType,
                 'jenis_surat_id' => $jenisSuratId
             ]);
 
-            // Ensure directory exists - PERBAIKAN DIREKTORI
+            // pastikan direktori ada
             $storageDir = storage_path('app/letters');
             if (!is_dir($storageDir)) {
                 mkdir($storageDir, 0755, true);
-                \Log::info('Created directory: ' . $storageDir);
+                \Log::info('Direktori dibuat: ' . $storageDir);
             }
 
-            // Generate descriptive filename
+            // buat nama file yang deskriptif
             $timestamp = date('Y-m-d_H-i-s');
             $user = Auth::user();
             $jenisSurat = JenisSurat::find($jenisSuratId);
@@ -72,10 +78,10 @@ class SuratController extends Controller
                 $fileExtension
             );
 
-            // Store file dengan nama yang deskriptif
+            // simpan file
             $filePath = $file->storeAs('letters', $descriptiveName);
             
-            \Log::info('File uploaded successfully:', [
+            \Log::info('File berhasil diupload:', [
                 'original_name' => $originalName,
                 'descriptive_name' => $descriptiveName,
                 'file_path' => $filePath,
@@ -85,12 +91,12 @@ class SuratController extends Controller
                 'file_size' => Storage::size($filePath)
             ]);
 
-            // Convert DOCX to PDF immediately after upload using LibreOffice
+            // konversi DOCX ke PDF pakai LibreOffice
             if (in_array($fileExtension, ['doc', 'docx'])) {
-                \Log::info('Converting Word document to PDF using LibreOffice');
+                \Log::info('Konversi Word ke PDF pakai LibreOffice');
                 $fullPath = storage_path('app/' . $filePath);
                 
-                // Convert to PDF using LibreOffice
+                // konversi ke PDF
                 $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
                 
                 if ($convertedPdfPath && file_exists($convertedPdfPath)) {
@@ -140,7 +146,7 @@ class SuratController extends Controller
                 // Delete the uploaded file since it's a duplicate
                 Storage::delete($filePath);
                 
-                return view('surat.duplicate_warning', [
+                return view('surat.automatic.duplicate_warning', [
                     'file_path' => $filePath,
                     'file_size' => $fileSize,
                     'mime_type' => $mimeType,
@@ -192,11 +198,11 @@ class SuratController extends Controller
 
             // Generate nomor surat untuk preview
             $jenisSurat = JenisSurat::find($jenisSuratId);
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $nextNomorUrut,
                 $user->division->kode_divisi,
                 $jenisSurat->kode_jenis,
-                date('m'),
+                $this->monthToRoman(date('n')),
                 date('Y')
             );
 
@@ -225,13 +231,11 @@ class SuratController extends Controller
 
             // Jika file sudah berisi nomor surat valid, langsung ke preview
             if ($hasValidNomor) {
-                return view('surat.preview_before_confirm', $prefilledData);
+                return view('surat.automatic.preview', $prefilledData);
             }
 
-            // Lock nomor urut untuk user ini
-            $this->lockNomorUrut($user->divisi_id, $jenisSuratId, $nextNomorUrut, $user->id);
-
-            return view('surat.confirm', $prefilledData);
+            // Don't lock here - let the JavaScript handle initial lock to avoid duplicates
+            return view('surat.automatic.confirm', $prefilledData);
 
         } catch (\Exception $e) {
             \Log::error('Error in handleUpload: ' . $e->getMessage(), [
@@ -252,35 +256,18 @@ class SuratController extends Controller
         // Hitung nomor surat jika tidak ada di request
         $nomorSurat = $request->input('nomor_surat');
         if (!$nomorSurat && $divisiId && $jenisSuratId && $nomorUrut) {
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $nomorUrut,
                 Division::find($divisiId)->kode_divisi,
                 JenisSurat::find($jenisSuratId)->kode_jenis,
-                date('m'),
+                $this->monthToRoman(date('n')),
                 date('Y')
             );
         }
         
-        if ($divisiId && $jenisSuratId && $nomorUrut) {
-            // Buat atau update lock (cleanup sudah dilakukan di getNextNomorUrut)
-            \App\Models\NomorUrutLock::updateOrCreate([
-                'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId,
-                'nomor_urut' => $nomorUrut,
-            ], [
-                'user_id' => \Auth::id(),
-                'locked_until' => now()->addMinutes(10),
-            ]);
-            
-            \Log::info('Lock created:', [
-                'user_id' => \Auth::id(),
-                'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId,
-                'nomor_urut' => $nomorUrut
-            ]);
-        }
+        // Don't create locks here - let JavaScript handle it to avoid race conditions
         
-        return view('surat.confirm', [
+        return view('surat.automatic.confirm', [
             'file_path' => $request->input('file_path'),
             'file_size' => $request->input('file_size'),
             'mime_type' => $request->input('mime_type'),
@@ -314,16 +301,16 @@ class SuratController extends Controller
             ]);
 
             // Generate nomor surat untuk preview
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $request->nomor_urut,
                 Division::find($request->divisi_id)->kode_divisi,
                 JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                date('m', strtotime($request->tanggal_surat)),
+                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
                 date('Y', strtotime($request->tanggal_surat))
             );
 
             // Redirect ke final preview dengan data yang sudah dikonfirmasi
-            return view('surat.final_preview', [
+            return view('surat.automatic.final_preview', [
                 'file_path' => $request->file_path,
                 'file_size' => $request->file_size,
                 'mime_type' => $request->mime_type,
@@ -352,6 +339,18 @@ class SuratController extends Controller
     public function finalStore(Request $request)
     {
         try {
+            \Log::info('finalStore method called with data:', [
+                'request_data' => $request->all(),
+                'user_id' => Auth::id(),
+                'user_authenticated' => Auth::check(),
+                'ip' => $request->ip()
+            ]);
+            
+            if (!Auth::check()) {
+                \Log::error('User not authenticated in finalStore');
+                return redirect()->route('login')->with('error', 'Session expired. Please login again.');
+            }
+            
         $request->validate([
             'file_path' => 'required',
             'file_size' => 'required|integer',
@@ -366,8 +365,17 @@ class SuratController extends Controller
             'selected_users' => 'array',
             'selected_users.*' => 'exists:users,id'
             ]);
+            
+            \Log::info('finalStore validation passed, proceeding with data:', [
+                'nomor_urut' => $request->nomor_urut,
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'perihal' => $request->perihal,
+                'tanggal_surat' => $request->tanggal_surat,
+                'file_path' => $request->file_path
+            ]);
 
-            // Hapus lock nomor urut user ini (jika ada)
+            // Hapus lock nomor urut user ini (jika ada) - cleanup for all months
             NomorUrutLock::where('divisi_id', $request->divisi_id)
                 ->where('jenis_surat_id', $request->jenis_surat_id)
                 ->where('nomor_urut', $request->nomor_urut)
@@ -380,20 +388,47 @@ class SuratController extends Controller
                 \Log::info("Cleaned up {$expiredCleaned} expired locks during finalStore");
             }
 
-        // Cek duplikasi nomor urut
-            if (Surat::where('nomor_urut', $request->nomor_urut)
+        // Cek duplikasi nomor urut untuk bulan yang sama
+            $monthYear = \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m');
+            
+            \Log::info('Checking for duplicate nomor urut with month specificity:', [
+                'nomor_urut' => $request->nomor_urut,
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'month_year' => $monthYear,
+                'tanggal_surat' => $request->tanggal_surat
+            ]);
+            
+            $existingSurat = Surat::where('nomor_urut', $request->nomor_urut)
                 ->where('divisi_id', $request->divisi_id)
                 ->where('jenis_surat_id', $request->jenis_surat_id)
-                ->exists()) {
-                return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini. Silakan pilih nomor lain.'])->withInput();
+                ->whereYear('tanggal_surat', substr($monthYear, 0, 4))
+                ->whereMonth('tanggal_surat', substr($monthYear, 5, 2))
+                ->first();
+                
+            if ($existingSurat) {
+                \Log::warning('Duplicate nomor urut detected in finalStore for the same month:', [
+                    'nomor_urut' => $request->nomor_urut,
+                    'divisi_id' => $request->divisi_id,
+                    'jenis_surat_id' => $request->jenis_surat_id,
+                    'month_year' => $monthYear,
+                    'existing_surat_id' => $existingSurat->id,
+                    'existing_surat_nomor' => $existingSurat->nomor_surat,
+                    'existing_surat_tanggal' => $existingSurat->tanggal_surat,
+                    'existing_surat_uploaded_by' => $existingSurat->uploaded_by,
+                    'current_user_id' => Auth::id()
+                ]);
+                return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk bulan ini pada jenis surat ini di divisi ini. Silakan pilih nomor lain.'])->withInput();
             }
+            
+            \Log::info('No duplicate nomor urut found, proceeding with store');
 
             // Generate nomor surat untuk database
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $request->nomor_urut,
                 Division::find($request->divisi_id)->kode_divisi,
                 JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                date('m', strtotime($request->tanggal_surat)),
+                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
                 date('Y', strtotime($request->tanggal_surat))
             );
 
@@ -479,13 +514,29 @@ class SuratController extends Controller
                 }
             }
 
+            \Log::info('finalStore about to redirect to home with success message', [
+                'surat_id' => $surat->id,
+                'nomor_surat' => $nomorSurat
+            ]);
+
             return redirect()->route('home')->with('success', 'Surat berhasil disimpan dengan nomor: ' . $nomorSurat);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error in finalStore:', [
+                'errors' => $e->errors(),
+                'request_data' => $request->all(),
+                'validator_messages' => $e->validator->messages()->toArray()
+            ]);
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             \Log::error('Error in finalStore method: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
+                'exception_class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
             ]);
-            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()])->withInput();
         }
     }
 
@@ -506,20 +557,24 @@ class SuratController extends Controller
                 'is_private' => 'boolean'
             ]);
 
-            // Check for duplicate nomor urut
+            // Check for duplicate nomor urut for the same month
+            $monthYear = \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m');
+            
             if (Surat::where('nomor_urut', $request->nomor_urut)
                 ->where('divisi_id', $request->divisi_id)
                 ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->whereYear('tanggal_surat', substr($monthYear, 0, 4))
+                ->whereMonth('tanggal_surat', substr($monthYear, 5, 2))
                 ->exists()) {
-                return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk jenis surat ini di divisi ini.'])->withInput();
+                return back()->withErrors(['nomor_urut' => 'Nomor urut sudah ada untuk bulan ini pada jenis surat ini di divisi ini.'])->withInput();
             }
 
             // Generate nomor surat
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $request->nomor_urut,
                 Division::find($request->divisi_id)->kode_divisi,
                 JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                date('m', strtotime($request->tanggal_surat)),
+                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
                 date('Y', strtotime($request->tanggal_surat))
             );
 
@@ -548,7 +603,7 @@ class SuratController extends Controller
                 'jenis_surat_id' => $request->jenis_surat_id
             ]);
             
-            // Cleanup expired locks and any locks for this combination
+            // Cleanup expired locks and any locks for this combination - all months
             NomorUrutLock::where('divisi_id', $request->divisi_id)
                 ->where('jenis_surat_id', $request->jenis_surat_id)
                 ->where('nomor_urut', $request->nomor_urut)
@@ -1154,19 +1209,29 @@ class SuratController extends Controller
         return null;
     }
 
-    // Helper: Check for duplicate nomor_urut and get available numbers (per divisi & jenis surat)
-    private function checkDuplicate($divisiId, $jenisSuratId, $nomorUrut)
+    // Helper: Check for duplicate nomor_urut and get available numbers (per divisi & jenis surat & month)
+    private function checkDuplicate($divisiId, $jenisSuratId, $nomorUrut, $tanggalSurat = null)
     {
-        $isDuplicate = Surat::where('nomor_urut', $nomorUrut)
-                           ->where('divisi_id', $divisiId)
-            ->where('jenis_surat_id', $jenisSuratId)
-                           ->exists();
+        $query = Surat::where('nomor_urut', $nomorUrut)
+                     ->where('divisi_id', $divisiId)
+                     ->where('jenis_surat_id', $jenisSuratId);
+        
+        // If tanggal_surat is provided, check for the same month only
+        if ($tanggalSurat) {
+            $monthYear = \Carbon\Carbon::parse($tanggalSurat)->format('Y-m');
+            $query->whereYear('tanggal_surat', substr($monthYear, 0, 4))
+                  ->whereMonth('tanggal_surat', substr($monthYear, 5, 2));
+        }
+        
+        $isDuplicate = $query->exists();
 
         if ($isDuplicate) {
             \Log::warning('Duplicate nomor urut detected:', [
                 'nomor_urut' => $nomorUrut,
                 'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId
+                'jenis_surat_id' => $jenisSuratId,
+                'tanggal_surat' => $tanggalSurat,
+                'month_specific' => $tanggalSurat ? true : false
             ]);
         }
         
@@ -1257,25 +1322,24 @@ class SuratController extends Controller
     }
 
     // Helper: Lock nomor urut for a specific user
-    private function lockNomorUrut($divisiId, $jenisSuratId, $nomorUrut, $userId)
+    private function lockNomorUrut($divisiId, $jenisSuratId, $nomorUrut, $userId, $tanggalSurat = null)
     {
         try {
+            // Get month-year for lock specificity
+            $monthYear = $tanggalSurat ? 
+                \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
+                \Carbon\Carbon::now()->format('Y-m');
+                
             \Log::info('Locking nomor urut:', [
                 'divisi_id' => $divisiId,
                 'jenis_surat_id' => $jenisSuratId,
                 'nomor_urut' => $nomorUrut,
-                'user_id' => $userId
+                'user_id' => $userId,
+                'month_year' => $monthYear
             ]);
             
-            // Buat atau update lock (cleanup sudah dilakukan di getNextNomorUrut)
-            NomorUrutLock::updateOrCreate([
-                'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId,
-                'nomor_urut' => $nomorUrut,
-            ], [
-                'user_id' => $userId,
-                'locked_until' => now()->addMinutes(10),
-            ]);
+            // Use the new static method that handles month_year
+            NomorUrutLock::createOrExtendLock($divisiId, $jenisSuratId, $nomorUrut, $userId, $monthYear);
             
             \Log::info('Nomor urut locked successfully');
             
@@ -1331,11 +1395,11 @@ class SuratController extends Controller
             }
             
             // Generate nomor surat untuk preview
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
                 $request->nomor_urut,
                 Division::find($request->divisi_id)->kode_divisi,
                 JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                date('m', strtotime($request->tanggal_surat)),
+                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
                 date('Y', strtotime($request->tanggal_surat))
             );
             
@@ -1511,5 +1575,430 @@ class SuratController extends Controller
             ]);
             abort(500, 'Error downloading file.');
         }
+    }
+
+    // ================= MANUAL MODE METHODS =================
+
+    /**
+     * Show mode selection page
+     */
+    public function showModeSelection()
+    {
+        return view('surat.mode_selection');
+    }
+
+    /**
+     * Show manual form to generate nomor surat
+     */
+    public function showManualForm()
+    {
+        $user = Auth::user();
+        $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->active()->get();
+        
+        return view('surat.manual.form', [
+            'jenisSurat' => $jenisSurat
+        ]);
+    }
+
+    /**
+     * Generate nomor surat for manual mode
+     */
+    public function manualGenerate(Request $request)
+    {
+        try {
+            $request->validate([
+                'jenis_surat_id' => 'required|exists:jenis_surat,id',
+                'perihal' => 'required|string|max:255',
+                'tanggal_surat' => 'required|date',
+                'tanggal_diterima' => 'nullable|date',
+                'is_private' => 'boolean'
+            ]);
+
+            $user = Auth::user();
+            $jenisSurat = JenisSurat::findOrFail($request->jenis_surat_id);
+            $division = $user->division;
+
+            // Generate next nomor urut
+            $nextNomorUrut = $this->getNextNomorUrut($user->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
+            
+            if (!$nextNomorUrut) {
+                if ($request->ajax()) {
+                    return response()->json(['success' => false, 'message' => 'Gagal generate nomor urut. Silakan coba lagi.']);
+                }
+                return back()->withErrors(['error' => 'Gagal generate nomor urut. Silakan coba lagi.']);
+            }
+
+            // Generate nomor surat
+            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
+                $nextNomorUrut,
+                $division->kode_divisi,
+                $jenisSurat->kode_jenis,
+                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
+                date('Y', strtotime($request->tanggal_surat))
+            );
+
+            // Lock nomor urut for this user
+            $this->lockNomorUrut($user->divisi_id, $request->jenis_surat_id, $nextNomorUrut, $user->id, $request->tanggal_surat);
+
+            // Store data in session
+            $sessionData = [
+                'nomor_urut' => $nextNomorUrut,
+                'nomor_surat' => $nomorSurat,
+                'divisi_id' => $user->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'perihal' => $request->perihal,
+                'tanggal_surat' => $request->tanggal_surat,
+                'tanggal_diterima' => $request->tanggal_diterima ?: date('Y-m-d'),
+                'is_private' => $request->has('is_private'),
+                'generated_at' => now()
+            ];
+            
+            session(['manual_surat_data' => $sessionData]);
+
+            // Return JSON for AJAX requests
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => $sessionData
+                ]);
+            }
+
+            return redirect()->route('surat.manual.generated');
+
+        } catch (\Exception $e) {
+            \Log::error('Error in manualGenerate: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            if ($request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+            }
+            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Show generated nomor surat
+     */
+    public function showManualGenerated()
+    {
+        $data = session('manual_surat_data');
+        
+        if (!$data) {
+            return redirect()->route('surat.manual.form')
+                ->withErrors(['error' => 'Session expired. Silakan generate nomor surat kembali.']);
+        }
+
+        $division = Division::find($data['divisi_id']);
+        $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
+
+        return view('surat.manual.generated', [
+            'nomor_surat' => $data['nomor_surat'],
+            'division_name' => $division->nama_divisi,
+            'division_code' => $division->kode_divisi,
+            'jenis_surat_name' => $jenisSurat->nama_jenis,
+            'jenis_surat_code' => $jenisSurat->kode_jenis,
+            'perihal' => $data['perihal'],
+            'tanggal_surat' => $data['tanggal_surat'],
+            'is_private' => $data['is_private']
+        ]);
+    }
+
+    /**
+     * Show upload form for manual mode
+     */
+    public function showManualUpload()
+    {
+        $data = session('manual_surat_data');
+        
+        if (!$data) {
+            return redirect()->route('surat.manual.form')
+                ->withErrors(['error' => 'Session expired. Silakan generate nomor surat kembali.']);
+        }
+
+        $division = Division::find($data['divisi_id']);
+        $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
+
+        return view('surat.manual.upload', [
+            'expected_nomor_surat' => $data['nomor_surat'],
+            'division_name' => $division->nama_divisi,
+            'jenis_surat_name' => $jenisSurat->nama_jenis,
+            'perihal' => $data['perihal'],
+            'tanggal_surat' => $data['tanggal_surat']
+        ]);
+    }
+
+    /**
+     * Handle file upload for manual mode
+     */
+    public function manualHandleUpload(Request $request)
+    {
+        try {
+            $request->validate([
+                'file' => 'required|file|mimes:pdf,doc,docx|max:10240', // 10MB max
+            ]);
+
+            // Try to get data from session first (old flow)
+            $data = session('manual_surat_data');
+            
+            // If no session data, get from current user's lock (new flow)
+            if (!$data) {
+                $user = Auth::user();
+                $currentLock = NomorUrutLock::where('user_id', $user->id)
+                    ->where('locked_until', '>', now())
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+                
+                if (!$currentLock) {
+                    if ($request->ajax()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Session expired atau nomor surat sudah tidak berlaku. Silakan refresh halaman.'
+                        ]);
+                    }
+                    return redirect()->route('surat.manual.form')
+                        ->withErrors(['error' => 'Session expired atau nomor surat sudah tidak berlaku. Silakan refresh halaman.']);
+                }
+                
+                // Reconstruct data from lock
+                $jenisSurat = JenisSurat::find($currentLock->jenis_surat_id);
+                $tanggalSurat = $currentLock->created_at->format('Y-m-d'); // Approximate from lock creation
+                
+                $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
+                    $currentLock->nomor_urut,
+                    $user->division->kode_divisi,
+                    $jenisSurat->kode_jenis,
+                    $this->monthToRoman($currentLock->created_at->month),
+                    $currentLock->created_at->year
+                );
+                
+                $data = [
+                    'nomor_urut' => $currentLock->nomor_urut,
+                    'nomor_surat' => $nomorSurat,
+                    'divisi_id' => $currentLock->divisi_id,
+                    'jenis_surat_id' => $currentLock->jenis_surat_id,
+                    'perihal' => 'Manual Upload', // Default since we don't store perihal in lock
+                    'tanggal_surat' => $tanggalSurat,
+                    'tanggal_diterima' => now()->format('Y-m-d'),
+                    'is_private' => false,
+                    'generated_at' => $currentLock->created_at
+                ];
+            }
+
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+
+            // Store file
+            $timestamp = date('Y-m-d_H-i-s');
+            $user = Auth::user();
+            $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
+            $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $descriptiveName = sprintf(
+                'surat_manual_%s_%s_%s.%s',
+                $user->division->kode_divisi,
+                $jenisSurat->kode_jenis,
+                $timestamp,
+                $fileExtension
+            );
+
+            $filePath = $file->storeAs('letters', $descriptiveName);
+
+            // Convert DOCX to PDF if needed
+            if (in_array($fileExtension, ['doc', 'docx'])) {
+                $fullPath = storage_path('app/' . $filePath);
+                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
+                
+                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
+                    $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
+                    $newFilePath = 'letters/' . $pdfDescriptiveName;
+                    
+                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
+                    unlink($convertedPdfPath);
+                    Storage::delete($filePath);
+                    
+                    $filePath = $newFilePath;
+                    $fileExtension = 'pdf';
+                    $mimeType = 'application/pdf';
+                    $fileSize = Storage::size($filePath);
+                }
+            }
+
+            // Extract text for verification
+            $extractedText = '';
+            $ocrError = null;
+            $extractionMethod = '';
+
+            if ($fileExtension === 'pdf') {
+                try {
+                    $extractionMethod = 'PDF Parser';
+                    $parser = new \Smalot\PdfParser\Parser();
+                    $fullPath = storage_path('app/' . $filePath);
+                    $pdf = $parser->parseFile($fullPath);
+                    foreach ($pdf->getPages() as $page) {
+                        $extractedText .= $page->getText() . ' ';
+                    }
+                } catch (\Exception $e) {
+                    $ocrError = 'Error ekstraksi teks (PDF Parser): ' . $e->getMessage();
+                }
+            }
+
+            // Verify nomor surat in the file
+            $expectedNomorSurat = $data['nomor_surat'];
+            $verificationResult = $this->verifyNomorSuratInText($extractedText, $expectedNomorSurat);
+
+            if ($verificationResult['success']) {
+                // Nomor surat sesuai - simpan ke database
+                $surat = Surat::create([
+                    'nomor_urut' => $data['nomor_urut'],
+                    'nomor_surat' => $data['nomor_surat'],
+                    'divisi_id' => $data['divisi_id'],
+                    'jenis_surat_id' => $data['jenis_surat_id'],
+                    'perihal' => $data['perihal'],
+                    'tanggal_surat' => $data['tanggal_surat'],
+                    'tanggal_diterima' => $data['tanggal_diterima'],
+                    'file_path' => $filePath,
+                    'file_size' => $fileSize,
+                    'mime_type' => $mimeType,
+                    'is_private' => $data['is_private'],
+                    'uploaded_by' => Auth::id(),
+                ]);
+
+                // Increment counter
+                $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
+
+                // Cleanup locks
+                NomorUrutLock::where('divisi_id', $data['divisi_id'])
+                    ->where('jenis_surat_id', $data['jenis_surat_id'])
+                    ->where('nomor_urut', $data['nomor_urut'])
+                    ->where('user_id', Auth::id())
+                    ->delete();
+
+                // Clear session
+                session()->forget('manual_surat_data');
+
+                $division = Division::find($data['divisi_id']);
+                $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
+
+                // For AJAX requests, redirect to verification page
+                if ($request->ajax()) {
+                    return redirect()->route('surat.manual.verification', ['success' => true]);
+                }
+
+                return view('surat.manual.verification', [
+                    'verification_success' => true,
+                    'nomor_surat' => $data['nomor_surat'],
+                    'perihal' => $data['perihal'],
+                    'tanggal_surat' => $data['tanggal_surat'],
+                    'is_private' => $data['is_private'],
+                    'division_name' => $division->nama_divisi,
+                    'jenis_surat_name' => $jenisSurat->nama_jenis,
+                    'original_filename' => $originalName,
+                    'file_size' => $fileSize,
+                    'extracted_text' => $extractedText
+                ]);
+            } else {
+                // Nomor surat tidak sesuai
+                Storage::delete($filePath); // Hapus file yang gagal verifikasi
+
+                if ($request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $verificationResult['error'] . 
+                                   ($verificationResult['found_nomor'] ? ' Ditemukan: ' . $verificationResult['found_nomor'] : '')
+                    ]);
+                }
+
+                return view('surat.manual.verification', [
+                    'verification_success' => false,
+                    'error_message' => $verificationResult['error'],
+                    'expected_nomor_surat' => $expectedNomorSurat,
+                    'found_nomor_surat' => $verificationResult['found_nomor'],
+                    'extracted_text' => $extractedText,
+                    'ocr_error' => $ocrError
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error in manualHandleUpload: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+                ]);
+            }
+            return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Verify nomor surat in extracted text
+     */
+    private function verifyNomorSuratInText($extractedText, $expectedNomorSurat)
+    {
+        if (empty($extractedText)) {
+            return [
+                'success' => false,
+                'error' => 'Tidak dapat mengekstrak teks dari file. Pastikan file tidak rusak atau ter-password.',
+                'found_nomor' => null
+            ];
+        }
+
+        // Normalize text
+        $normalizedText = preg_replace('/\s+/', ' ', $extractedText);
+        
+        // Clean expected nomor surat (remove spaces, normalize format)
+        $cleanExpectedNomor = str_replace(' ', '', $expectedNomorSurat);
+        
+        // Look for various patterns of nomor surat
+        $patterns = [
+            '/Nomor\s*:?\s*(' . preg_quote($expectedNomorSurat, '/') . ')/i',
+            '/Nomor\s*:?\s*(' . preg_quote($cleanExpectedNomor, '/') . ')/i',
+            '/(' . preg_quote($expectedNomorSurat, '/') . ')/i',
+            '/(' . preg_quote($cleanExpectedNomor, '/') . ')/i',
+            // More flexible pattern - match format but with different numbers
+            '/Nomor\s*:?\s*(\d{3}\/[A-Z]+\/[A-Z]+\/INTENS\/\d{2}\/\d{4})/i',
+            '/(\d{3}\/[A-Z]+\/[A-Z]+\/INTENS\/\d{2}\/\d{4})/i'
+        ];
+
+        $foundNomor = null;
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $normalizedText, $matches)) {
+                $foundNomor = $matches[1];
+                
+                // Check if it matches exactly
+                if (str_replace(' ', '', $foundNomor) === $cleanExpectedNomor) {
+                    return [
+                        'success' => true,
+                        'found_nomor' => $foundNomor
+                    ];
+                }
+            }
+        }
+
+        return [
+            'success' => false,
+            'error' => 'Nomor surat dalam file tidak sesuai dengan nomor yang di-generate. Pastikan Anda telah mengisi nomor surat dengan benar.',
+            'found_nomor' => $foundNomor
+        ];
+    }
+
+    /**
+     * Show manual verification page
+     */
+    public function showManualVerification(Request $request)
+    {
+        if ($request->has('success')) {
+            return view('surat.manual.verification', [
+                'verification_success' => true,
+                'message' => 'Surat berhasil diupload dan disimpan!'
+            ]);
+        }
+        
+        return redirect()->route('surat.manual.form');
     }
 }

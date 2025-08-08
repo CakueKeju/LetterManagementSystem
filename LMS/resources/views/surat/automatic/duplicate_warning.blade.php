@@ -50,7 +50,7 @@
                 <div class="card-body">
                     <h6>Opsi 1: Upload Ulang dengan Nomor yang Benar</h6>
                     <p>Upload ulang dokumen dengan nomor urut yang tersedia di atas.</p>
-                    <a href="{{ route('surat.mode.selection') }}" class="btn btn-primary">Upload Ulang</a>
+                    <a href="{{ route('surat.upload') }}" class="btn btn-primary">Upload Ulang</a>
                 </div>
             </div>
         </div>
@@ -59,7 +59,7 @@
                 <div class="card-body">
                     <h6>Opsi 2: Gunakan Nomor yang Tersedia</h6>
                     <p>Lanjutkan dengan salah satu nomor yang tersedia.</p>
-                    <form action="{{ route('surat.mode.selection') }}" method="GET">
+                    <form action="{{ route('surat.upload') }}" method="GET">
                         <div class="mb-3">
                             <label for="suggested_number" class="form-label">Pilih Nomor:</label>
                             <select class="form-select" id="suggested_number" name="suggested_number">

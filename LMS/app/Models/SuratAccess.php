@@ -16,6 +16,8 @@ class SuratAccess extends Model
     protected $table = 'surat_access';
     public $timestamps = false;
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'surat_id',
         'user_id',
@@ -28,6 +30,8 @@ class SuratAccess extends Model
         'surat_id' => 'integer',
         'user_id' => 'integer',
     ];
+
+    // ================================= RELASI =================================
 
     public function surat(): BelongsTo
     {

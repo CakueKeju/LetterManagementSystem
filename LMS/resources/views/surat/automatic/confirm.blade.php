@@ -145,6 +145,15 @@
 </div>
 
 <script>
+// Convert month number to Roman numeral
+function monthToRoman(month) {
+    const romanNumerals = {
+        1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI',
+        7: 'VII', 8: 'VIII', 9: 'IX', 10: 'X', 11: 'XI', 12: 'XII'
+    };
+    return romanNumerals[month] || month;
+}
+
 // Nomor surat preview update
 function updateNomorSuratPreview() {
     var divisiInput = document.getElementById('divisi_id');
@@ -158,7 +167,7 @@ function updateNomorSuratPreview() {
     
     // Gunakan tanggal surat untuk bulan dan tahun (BUKAN tanggal upload)
     var tgl = tanggalSurat ? new Date(tanggalSurat) : new Date();
-    var bulan = !isNaN(tgl.getMonth()) ? (tgl.getMonth()+1).toString().padStart(2, '0') : '...';
+    var bulan = !isNaN(tgl.getMonth()) ? monthToRoman(tgl.getMonth() + 1) : '...';
     var tahun = !isNaN(tgl.getFullYear()) ? tgl.getFullYear() : '...';
     
     // Gunakan nomor urut yang sudah di-lock dari server
@@ -180,6 +189,7 @@ function updateNomorSuratPreview() {
 function lockNomorUrutAndUpdate() {
     var divisiId = document.getElementById('divisi_id').value;
     var jenisSuratId = document.getElementById('jenis_surat_id').value;
+    var tanggalSurat = document.getElementById('tanggal_surat').value;
     
     if (!divisiId || !jenisSuratId) {
         // Update preview dengan data yang ada meskipun belum ada nomor urut
@@ -187,14 +197,37 @@ function lockNomorUrutAndUpdate() {
         return;
     }
     
+    // Check if we already have the right lock for current selection including date
+    var currentLock = window.currentLockInfo || {};
+    if (currentLock.divisi_id == divisiId && 
+        currentLock.jenis_surat_id == jenisSuratId && 
+        currentLock.tanggal_surat == tanggalSurat) {
+        // We already have the right lock, just update preview
+        updateNomorSuratPreview();
+        return;
+    }
+    
     // Update preview dulu dengan placeholder untuk responsivitas
     updateNomorSuratPreview();
     
-    fetch(`/api/lock-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}`)
+    // Build URL with date parameter if available
+    var url = `/api/lock-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}`;
+    if (tanggalSurat) {
+        url += `&tanggal_surat=${tanggalSurat}`;
+    }
+    
+    fetch(url)
         .then(response => response.json())
         .then(data => {
             if (data.nomor_urut) {
                 document.getElementById('nomor_urut_hidden').value = data.nomor_urut;
+                // Store current lock info to avoid duplicate calls
+                window.currentLockInfo = {
+                    divisi_id: divisiId,
+                    jenis_surat_id: jenisSuratId,
+                    nomor_urut: data.nomor_urut,
+                    tanggal_surat: tanggalSurat
+                };
                 // Update lagi setelah dapat nomor urut yang benar
                 updateNomorSuratPreview();
             }
@@ -208,7 +241,70 @@ function lockNomorUrutAndUpdate() {
 
 // Update preview tanpa delay untuk perubahan tanggal
 function updateNomorSuratPreviewInstant() {
-    updateNomorSuratPreview();
+    // Untuk perubahan tanggal, kita perlu cek nomor urut yang baru
+    updateNomorUrutForDate();
+}
+
+// Update nomor urut berdasarkan tanggal baru
+function updateNomorUrutForDate() {
+    var divisiId = document.getElementById('divisi_id').value;
+    var jenisSuratId = document.getElementById('jenis_surat_id').value;
+    var tanggalSurat = document.getElementById('tanggal_surat').value;
+    
+    if (!divisiId || !jenisSuratId || !tanggalSurat) {
+        // Update preview dengan data yang ada
+        updateNomorSuratPreview();
+        return;
+    }
+    
+    // Check if date actually changed to avoid unnecessary API calls
+    if (window.lastLockedDate === tanggalSurat && window.currentLockInfo && 
+        window.currentLockInfo.divisi_id == divisiId && 
+        window.currentLockInfo.jenis_surat_id == jenisSuratId) {
+        // Date hasn't changed for same selection, just update preview
+        updateNomorSuratPreview();
+        return;
+    }
+    
+    // Store the date we're locking for
+    window.lastLockedDate = tanggalSurat;
+    
+    // Direct call to lock dengan tanggal baru - let server handle cleanup
+    fetch(`/api/lock-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}&tanggal_surat=${tanggalSurat}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.nomor_urut) {
+            // Update nomor urut hidden input dengan locked value
+            document.getElementById('nomor_urut_hidden').value = data.nomor_urut;
+            // Store current lock info to avoid duplicate calls
+            window.currentLockInfo = {
+                divisi_id: divisiId,
+                jenis_surat_id: jenisSuratId,
+                nomor_urut: data.nomor_urut,
+                tanggal_surat: tanggalSurat
+            };
+            // Update preview display
+            updateNomorSuratPreview();
+            console.log('Updated and locked nomor urut for new date:', data.nomor_urut);
+        } else if (data.error) {
+            console.error('Error locking nomor urut:', data.error);
+            // Show preview saja jika tidak bisa lock
+            return fetch(`/api/preview-nomor-urut?divisi_id=${divisiId}&jenis_surat_id=${jenisSuratId}&tanggal_surat=${tanggalSurat}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.nomor_urut) {
+                        document.getElementById('nomor_urut_hidden').value = data.nomor_urut;
+                        updateNomorSuratPreview();
+                        console.log('Updated nomor urut preview (fallback):', data.nomor_urut);
+                    }
+                });
+        }
+    })
+    .catch(error => {
+        console.error('Error updating nomor urut for date:', error);
+        // Tetap update preview meskipun ada error
+        updateNomorSuratPreview();
+    });
 }
 
 // Debounced version untuk input yang sering berubah
@@ -341,6 +437,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Lock nomor urut jika jenis surat sudah dipilih
         var jenisSelect = document.getElementById('jenis_surat_id');
         if (jenisSelect.value) {
+            // Initialize current lock info to prevent unnecessary calls
+            window.currentLockInfo = null;
+            window.lastLockedDate = null;
             lockNomorUrutAndUpdate();
         } else {
             updateNomorSuratPreview();
@@ -349,12 +448,28 @@ document.addEventListener('DOMContentLoaded', function() {
         // Event listeners untuk perubahan field - real time update
         jenisSelect.addEventListener('change', function() {
             console.log('Jenis surat changed to:', this.value);
+            // Reset lock info when jenis surat changes
+            window.currentLockInfo = null;
+            window.lastLockedDate = null;
             lockNomorUrutAndUpdate();
         });
         
-        // Update preview saat tanggal berubah
-        tanggalSuratInput.addEventListener('change', updateNomorSuratPreviewInstant);
-        tanggalSuratInput.addEventListener('input', updateNomorSuratPreviewDebounced);
+        // Update preview saat tanggal berubah - real time update
+        tanggalSuratInput.addEventListener('change', function() {
+            // Reset lock info when date changes
+            window.currentLockInfo = null;
+            window.lastLockedDate = null;
+            updateNomorSuratPreviewInstant();
+        });
+        tanggalSuratInput.addEventListener('input', function() {
+            // Reset lock info when date changes
+            window.currentLockInfo = null;
+            window.lastLockedDate = null;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function() {
+                updateNomorUrutForDate();
+            }, 300); // 300ms debounce untuk input
+        });
         
         // Initialize lock management
         initializeLockManagement();

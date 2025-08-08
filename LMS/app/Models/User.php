@@ -14,6 +14,8 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'username',
         'email',
@@ -36,6 +38,8 @@ class User extends Authenticatable
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    // ================================= RELASI =================================
 
     public function division(): BelongsTo
     {

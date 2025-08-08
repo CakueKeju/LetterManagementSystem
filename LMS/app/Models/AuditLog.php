@@ -14,6 +14,8 @@ class AuditLog extends Model
     protected $table = 'audit_log';
     public $timestamps = false;
 
+    // ================================= FILLABLE =================================
+    
     protected $fillable = [
         'table_name',
         'record_id',
@@ -33,6 +35,8 @@ class AuditLog extends Model
         'record_id' => 'integer',
         'user_id' => 'integer',
     ];
+
+    // ================================= RELASI =================================
 
     public function user(): BelongsTo
     {

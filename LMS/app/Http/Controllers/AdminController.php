@@ -8,6 +8,7 @@ use App\Models\JenisSurat;
 use App\Models\User;
 use App\Models\SuratAccess;
 use App\Traits\DocumentProcessor;
+use App\Traits\RomanNumeralConverter;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -18,17 +19,18 @@ use Illuminate\Support\Facades\Storage;
 class AdminController extends Controller
 {
     use DocumentProcessor;
-
-    // Testing
-    private const SHOW_RESET_COUNTERS = false;
+    use RomanNumeralConverter;
 
     public function __construct()
     {
         $this->middleware(['auth', 'admin']);
     }
 
+    // ================================= DASHBOARD =================================
+    
     public function dashboard(): View
     {
+        // statistik dashboard
         $stats = [
             'total_surat' => Surat::count(),
             'total_users' => User::count(),
@@ -38,11 +40,13 @@ class AdminController extends Controller
             'public_surat' => Surat::where('is_private', false)->count(),
         ];
 
+        // surat terbaru
         $recentSurat = Surat::with(['uploader', 'division', 'jenisSurat'])
             ->latest()
             ->limit(10)
             ->get();
 
+        // user terbaru
         $recentUsers = User::with('division')
             ->latest()
             ->limit(5)
@@ -142,11 +146,11 @@ class AdminController extends Controller
         // Generate new nomor_surat
         $division = Division::find($request->divisi_id);
         $jenisSurat = JenisSurat::find($request->jenis_surat_id);
-        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
             $request->nomor_urut, 
             $division->kode_divisi, 
             $jenisSurat->kode_jenis, 
-            date('m', strtotime($request->tanggal_surat)),
+            $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
             date('Y', strtotime($request->tanggal_surat))
         );
 
@@ -388,11 +392,11 @@ class AdminController extends Controller
         }
         $division = Division::find($request->divisi_id);
         $jenisSurat = JenisSurat::find($request->jenis_surat_id);
-        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%02d/%04d',
+        $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
             $request->nomor_urut,
             $division->kode_divisi,
             $jenisSurat->kode_jenis,
-            date('m', strtotime($request->tanggal_surat)),
+            $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
             date('Y', strtotime($request->tanggal_surat))
         );
         
@@ -672,8 +676,7 @@ class AdminController extends Controller
     public function jenisSuratIndex()
     {
         $jenisSurat = JenisSurat::withCount('surat')->paginate(20);
-        $showResetCounters = self::SHOW_RESET_COUNTERS;
-        return view('admin.jenis-surat.index', compact('jenisSurat', 'showResetCounters'));
+        return view('admin.jenis-surat.index', compact('jenisSurat'));
     }
 
     /**
@@ -742,39 +745,5 @@ class AdminController extends Controller
         $jenisSurat->delete();
 
         return redirect()->route('admin.jenis-surat.index')->with('success', 'Jenis surat berhasil dihapus!');
-    }
-
-    /**
-     * Reset counter for specific jenis surat (for testing)
-     */
-    public function resetJenisSuratCounter($id)
-    {
-        // Check if reset functionality is enabled
-        if (!self::SHOW_RESET_COUNTERS) {
-            return back()->with('error', 'Reset counter functionality is disabled.');
-        }
-
-        $jenisSurat = JenisSurat::findOrFail($id);
-        
-        // Reset counter to 0
-        $jenisSurat->update(['counter' => 0]);
-        
-        return back()->with('success', "Counter untuk jenis surat '{$jenisSurat->nama_jenis}' berhasil di-reset ke 0!");
-    }
-
-    /**
-     * Reset all counters (for testing)
-     */
-    public function resetAllCounters()
-    {
-        // Check if reset functionality is enabled
-        if (!self::SHOW_RESET_COUNTERS) {
-            return back()->with('error', 'Reset counter functionality is disabled.');
-        }
-
-        // Reset all jenis surat counters to 0
-        $updated = JenisSurat::query()->update(['counter' => 0]);
-        
-        return back()->with('success', "Semua counter jenis surat berhasil di-reset! ({$updated} jenis surat di-reset)");
     }
 } 

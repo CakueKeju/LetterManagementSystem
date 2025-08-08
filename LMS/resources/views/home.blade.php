@@ -6,7 +6,6 @@
     transition: all 0.2s ease;
     border-radius: 6px;
     font-size: 19px;
-    font-weight: 500;
     width: 28px;
     height: 28px;
     display: flex;
@@ -22,7 +21,6 @@
 }
 
 .action-buttons .btn:hover {
-    transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(0,0,0,0.12);
 }
 
@@ -67,7 +65,7 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="mb-0">Daftar Surat</h2>
-        <a href="{{ route('surat.upload') }}" class="btn btn-success">
+        <a href="{{ route('surat.mode.selection') }}" class="btn btn-success">
             <i class="fas fa-plus me-2"></i>Upload Surat
         </a>
     </div>
@@ -130,7 +128,7 @@
                 @forelse($letters as $i => $surat)
                     <tr>
                         <td>{{ $letters->firstItem() + $i }}</td>
-                        <td>{{ $surat->nomor_surat }}</td>
+                        <td>{{ $surat->nomor_surat_display }}</td>
                         <td>{{ $surat->perihal }}</td>
                         <td>{{ $surat->division->nama_divisi }}</td>
                         <td>{{ $surat->jenisSurat->nama_jenis }}</td>

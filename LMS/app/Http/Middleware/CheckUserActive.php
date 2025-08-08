@@ -9,25 +9,22 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CheckUserActive
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     */
+    // ================================= CEK USER AKTIF =================================
+    
     public function handle(Request $request, Closure $next): Response
     {
-        // Check if user is authenticated
+        // cek user udah login belum
         if (Auth::check()) {
             $user = Auth::user();
             
-            // Admin users are exempt from active check
+            // admin bebas lewat
             if ($user->isAdmin()) {
                 return $next($request);
             }
             
-            // Check if user is not active
+            // cek user aktif atau ngga
             if (!$user->is_active) {
-                // Log the user out
+                // logout user
                 Auth::logout();
                 
                 // Invalidate the session
