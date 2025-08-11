@@ -23,9 +23,8 @@ class SuratController extends Controller
     use DocumentProcessor;
     use RomanNumeralConverter;
 
-    // ================================= FORM UPLOAD =================================
-    
-    // tampilkan form upload
+    // ==========================================================================================
+    // Form Upload
     public function showUploadForm()
     {
         $user = Auth::user();
@@ -34,9 +33,8 @@ class SuratController extends Controller
         return view('surat.automatic.form', compact('jenisSurat'));
     }
 
-    // ================================= HANDLE UPLOAD =================================
-    
-    // proses upload file dan ekstrak teks
+    // ==========================================================================================
+    // Handle Upload
     public function handleUpload(Request $request)
     {
         try {
@@ -140,7 +138,13 @@ class SuratController extends Controller
                 'jenis_surat_id' => $jenisSuratId
             ]);
             
-            if ($this->checkDuplicate($user->divisi_id, $jenisSuratId, $nextNomorUrut)) {
+            // Check for duplicates inline instead of using separate method
+            $duplicateExists = Surat::where('nomor_urut', $nextNomorUrut)
+                ->where('divisi_id', $user->divisi_id)
+                ->where('jenis_surat_id', $jenisSuratId)
+                ->exists();
+                
+            if ($duplicateExists) {
                 \Log::warning('Duplicate nomor urut detected, showing warning');
                 
                 // hapus file yang diupload karena duplicate
@@ -198,13 +202,7 @@ class SuratController extends Controller
 
             // generate nomor surat buat preview
             $jenisSurat = JenisSurat::find($jenisSuratId);
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $nextNomorUrut,
-                $user->division->kode_divisi,
-                $jenisSurat->kode_jenis,
-                $this->monthToRoman(date('n')),
-                date('Y')
-            );
+            $nomorSurat = $this->generateNomorSurat($nextNomorUrut, $user->divisi_id, $jenisSuratId, date('Y-m-d'));
 
             \Log::info('Generated nomor surat:', [
                 'nomor_urut' => $nextNomorUrut,
@@ -214,8 +212,8 @@ class SuratController extends Controller
             // Prefill data untuk form konfirmasi
             $prefilledData = [
                 'file_path' => $filePath,
-            'file_size' => $fileSize,
-            'mime_type' => $mimeType,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
                 'nomor_urut' => $nextNomorUrut,
                 'divisi_id' => $user->divisi_id,
                 'jenis_surat_id' => $jenisSuratId,
@@ -223,7 +221,7 @@ class SuratController extends Controller
                 'jenisSurat' => JenisSurat::where('divisi_id', $user->divisi_id)->get(),
                 'nomor_surat' => $nomorSurat,
                 'extracted_text' => $extractedText,
-            'extraction_method' => $extractionMethod,
+                'extraction_method' => $extractionMethod,
                 'ocr_error' => $ocrError
             ];
 
@@ -301,13 +299,7 @@ class SuratController extends Controller
             ]);
 
             // Generate nomor surat untuk preview
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $request->nomor_urut,
-                Division::find($request->divisi_id)->kode_divisi,
-                JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
-                date('Y', strtotime($request->tanggal_surat))
-            );
+            $nomorSurat = $this->generateNomorSurat($request->nomor_urut, $request->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
 
             // Redirect ke final preview dengan data yang sudah dikonfirmasi
             return view('surat.automatic.final_preview', [
@@ -424,13 +416,7 @@ class SuratController extends Controller
             \Log::info('No duplicate nomor urut found, proceeding with store');
 
             // Generate nomor surat untuk database
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $request->nomor_urut,
-                Division::find($request->divisi_id)->kode_divisi,
-                JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
-                date('Y', strtotime($request->tanggal_surat))
-            );
+            $nomorSurat = $this->generateNomorSurat($request->nomor_urut, $request->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
 
             // Fill PDF dengan nomor surat
             $filePath = $request->input('file_path');
@@ -570,13 +556,7 @@ class SuratController extends Controller
             }
 
             // Generate nomor surat
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $request->nomor_urut,
-                Division::find($request->divisi_id)->kode_divisi,
-                JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
-                date('Y', strtotime($request->tanggal_surat))
-            );
+            $nomorSurat = $this->generateNomorSurat($request->nomor_urut, $request->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
 
             // Create surat record
             $surat = Surat::create([
@@ -906,276 +886,6 @@ class SuratController extends Controller
         return date('Y-m-d'); // Default to today if no date found
     }
 
-    private function parseIndonesianDate($dateText)
-    {
-        $dateText = strtolower(trim($dateText));
-        \Log::info('Parsing Indonesian date: ' . $dateText);
-        
-        // Clean up extra words that might interfere
-        $cleanText = preg_replace('/\b(kami|mengundang|dengan|ini|yang|lalu|telah|dilaksanakan|adalah|hari|penting|dalam|teks|senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/i', '', $dateText);
-        $cleanText = trim(preg_replace('/\s+/', ' ', $cleanText));
-        \Log::info('Cleaned text: ' . $cleanText);
-        
-        // Indonesian number to digit mapping
-        $numberMap = [
-            'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
-            'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
-            'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
-            'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
-            'sembilan belas' => 19, 'dua puluh' => 20, 'dua puluh satu' => 21, 'dua puluh dua' => 22,
-            'dua puluh tiga' => 23, 'dua puluh empat' => 24, 'dua puluh lima' => 25,
-            'dua puluh enam' => 26, 'dua puluh tujuh' => 27, 'dua puluh delapan' => 28,
-            'dua puluh sembilan' => 29, 'tiga puluh' => 30, 'tiga puluh satu' => 31
-        ];
-
-        $monthMap = [
-            'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
-            'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8,
-            'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12
-        ];
-
-        $day = null;
-        $month = null;
-        $year = null;
-
-        // Split into words for analysis
-        $words = explode(' ', $cleanText);
-        
-        // First, find the month (most reliable anchor)
-        $monthIndex = -1;
-        foreach ($words as $i => $word) {
-            if (isset($monthMap[$word])) {
-                $month = $monthMap[$word];
-                $monthIndex = $i;
-                \Log::info("Found month: $word = $month at position $i");
-                break;
-            }
-        }
-        
-        // If we have a month, look for day before it and year after it
-        if ($month !== null && $monthIndex >= 0) {
-            // Look for day before month (1-4 words before)
-            for ($i = max(0, $monthIndex - 4); $i < $monthIndex; $i++) {
-                $dayCandidate = $this->parseIndonesianDayFromWords($words, $i);
-                if ($dayCandidate && $dayCandidate >= 1 && $dayCandidate <= 31) {
-                    $day = $dayCandidate;
-                    \Log::info("Found day: $day");
-                    break;
-                }
-            }
-            
-            // Look for year after month
-            for ($i = $monthIndex + 1; $i < count($words); $i++) {
-                $yearCandidate = $this->parseIndonesianYearFromWords($words, $i);
-                if ($yearCandidate && $yearCandidate >= 1900 && $yearCandidate <= 2100) {
-                    $year = $yearCandidate;
-                    \Log::info("Found year: $year");
-                    break;
-                }
-            }
-        }
-        
-        // If no month found, try to find just a year
-        if ($month === null) {
-            foreach ($words as $i => $word) {
-                $yearCandidate = $this->parseIndonesianYearFromWords($words, $i);
-                if ($yearCandidate && $yearCandidate >= 1900 && $yearCandidate <= 2100) {
-                    $year = $yearCandidate;
-                    \Log::info("Found standalone year: $year");
-                    break;
-                }
-            }
-        }
-        
-        \Log::info("Final parsed components - Day: $day, Month: $month, Year: $year");
-        
-        // Return date in flexible format - use defaults for missing parts
-        if ($year) {
-            $finalDay = $day ?: 1; // Default to 1st if no day
-            $finalMonth = $month ?: 1; // Default to January if no month
-            
-            // Validate ranges
-            if ($finalDay >= 1 && $finalDay <= 31 && $finalMonth >= 1 && $finalMonth <= 12) {
-                $result = sprintf('%04d-%02d-%02d', $year, $finalMonth, $finalDay);
-                \Log::info("Returning flexible date: $result");
-                return $result;
-            }
-        }
-        
-        return null;
-    }
-
-    private function parseIndonesianDayFromWords($words, $startIndex)
-    {
-        if (!isset($words[$startIndex])) return null;
-        
-        $numberMap = [
-            'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
-            'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
-            'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
-            'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
-            'sembilan belas' => 19, 'dua puluh' => 20, 'dua puluh satu' => 21, 'dua puluh dua' => 22,
-            'dua puluh tiga' => 23, 'dua puluh empat' => 24, 'dua puluh lima' => 25,
-            'dua puluh enam' => 26, 'dua puluh tujuh' => 27, 'dua puluh delapan' => 28,
-            'dua puluh sembilan' => 29, 'tiga puluh' => 30, 'tiga puluh satu' => 31
-        ];
-        
-        // Check if it's a simple numeric day
-        if (is_numeric($words[$startIndex])) {
-            $day = (int)$words[$startIndex];
-            return ($day >= 1 && $day <= 31) ? $day : null;
-        }
-        
-        // Try compound phrases like "dua puluh tiga"
-        for ($len = 3; $len >= 1; $len--) {
-            if ($startIndex + $len - 1 < count($words)) {
-                $phrase = implode(' ', array_slice($words, $startIndex, $len));
-                if (isset($numberMap[$phrase])) {
-                    return $numberMap[$phrase];
-                }
-            }
-        }
-        
-        return null;
-    }
-    
-    private function parseIndonesianYearFromWords($words, $startIndex)
-    {
-        if (!isset($words[$startIndex])) return null;
-        
-        // Check if it's a simple numeric year
-        if (is_numeric($words[$startIndex])) {
-            $year = (int)$words[$startIndex];
-            return ($year >= 1900 && $year <= 2100) ? $year : null;
-        }
-        
-        // Try to parse written year like "dua ribu dua puluh empat"
-        $yearText = '';
-        $maxWords = min(6, count($words) - $startIndex); // Look ahead up to 6 words
-        
-        for ($i = 0; $i < $maxWords; $i++) {
-            $word = $words[$startIndex + $i];
-            // Stop if we hit a word that's not part of a year
-            if (!in_array($word, ['dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'satu', 'ribu', 'ratus', 'puluh', 'belas', 'sepuluh', 'sebelas'])) {
-                break;
-            }
-            $yearText .= $word . ' ';
-        }
-        
-        $yearText = trim($yearText);
-        if ($yearText) {
-            return $this->parseIndonesianYear($yearText);
-        }
-        
-        return null;
-    }
-
-    private function parseIndonesianYear($yearText)
-    {
-        $yearText = strtolower(trim($yearText));
-        
-        // Clean up punctuation and extra words
-        $yearText = preg_replace('/[,\.!?]/', '', $yearText);
-        $yearText = preg_replace('/\b(dengan|kami|yang|telah|ini|adalah|lalu|hingga)\b/', '', $yearText);
-        $yearText = trim(preg_replace('/\s+/', ' ', $yearText));
-        
-        \Log::info('Parsing Indonesian year (cleaned): ' . $yearText);
-        
-        // Common year patterns - ordered from most specific to least specific
-        $yearPatterns = [
-            // 2020s - most specific first
-            'dua ribu dua puluh sembilan' => 2029,
-            'dua ribu dua puluh delapan' => 2028,
-            'dua ribu dua puluh tujuh' => 2027,
-            'dua ribu dua puluh enam' => 2026,
-            'dua ribu dua puluh lima' => 2025,
-            'dua ribu dua puluh empat' => 2024,
-            'dua ribu dua puluh tiga' => 2023,
-            'dua ribu dua puluh dua' => 2022,
-            'dua ribu dua puluh satu' => 2021,
-            'dua ribu dua puluh' => 2020,
-            
-            // 2010s
-            'dua ribu sembilan belas' => 2019,
-            'dua ribu delapan belas' => 2018,
-            'dua ribu tujuh belas' => 2017,
-            'dua ribu enam belas' => 2016,
-            'dua ribu lima belas' => 2015,
-            'dua ribu empat belas' => 2014,
-            'dua ribu tiga belas' => 2013,
-            'dua ribu dua belas' => 2012,
-            'dua ribu sebelas' => 2011,
-            'dua ribu sepuluh' => 2010,
-            
-            // 2000s
-            'dua ribu sembilan' => 2009,
-            'dua ribu delapan' => 2008,
-            'dua ribu tujuh' => 2007,
-            'dua ribu enam' => 2006,
-            'dua ribu lima' => 2005,
-            'dua ribu empat' => 2004,
-            'dua ribu tiga' => 2003,
-            'dua ribu dua' => 2002,
-            'dua ribu satu' => 2001,
-            'dua ribu' => 2000,
-        ];
-        
-        // Use exact matching first for better accuracy
-        if (isset($yearPatterns[$yearText])) {
-            \Log::info('Found exact year match: ' . $yearText . ' = ' . $yearPatterns[$yearText]);
-            return $yearPatterns[$yearText];
-        }
-        
-        // Then try partial matching for cases where there might be extra words
-        foreach ($yearPatterns as $pattern => $year) {
-            if (strpos($yearText, $pattern) !== false) {
-                \Log::info('Found partial year pattern: ' . $pattern . ' = ' . $year);
-                return $year;
-            }
-        }
-        
-        // Try to parse more complex patterns
-        if (preg_match('/dua\s+ribu\s+(.*)/i', $yearText, $matches)) {
-            $remainder = trim($matches[1]);
-            $baseYear = 2000;
-            
-            // Parse the remainder (e.g., "dua puluh dua" = 22)
-            $numberMap = [
-                'satu' => 1, 'dua' => 2, 'tiga' => 3, 'empat' => 4, 'lima' => 5,
-                'enam' => 6, 'tujuh' => 7, 'delapan' => 8, 'sembilan' => 9, 'sepuluh' => 10,
-                'sebelas' => 11, 'dua belas' => 12, 'tiga belas' => 13, 'empat belas' => 14,
-                'lima belas' => 15, 'enam belas' => 16, 'tujuh belas' => 17, 'delapan belas' => 18,
-                'sembilan belas' => 19
-            ];
-            
-            if (isset($numberMap[$remainder])) {
-                return $baseYear + $numberMap[$remainder];
-            }
-            
-            // Handle "dua puluh X" patterns
-            if (preg_match('/dua\s+puluh\s*(.*)/i', $remainder, $puluhMatches)) {
-                $extra = trim($puluhMatches[1]);
-                $result = $baseYear + 20;
-                if ($extra && isset($numberMap[$extra])) {
-                    $result += $numberMap[$extra];
-                }
-                return $result;
-            }
-            
-            // Handle "tiga puluh X" patterns  
-            if (preg_match('/tiga\s+puluh\s*(.*)/i', $remainder, $puluhMatches)) {
-                $extra = trim($puluhMatches[1]);
-                $result = $baseYear + 30;
-                if ($extra && isset($numberMap[$extra])) {
-                    $result += $numberMap[$extra];
-                }
-                return $result;
-            }
-        }
-        
-        return null;
-    }
-
     // Helper method to find divisi from text
     private function findDivisiFromText($text)
     {
@@ -1209,50 +919,14 @@ class SuratController extends Controller
         return null;
     }
 
-    // Helper: Check for duplicate nomor_urut and get available numbers (per divisi & jenis surat & month)
-    private function checkDuplicate($divisiId, $jenisSuratId, $nomorUrut, $tanggalSurat = null)
-    {
-        $query = Surat::where('nomor_urut', $nomorUrut)
-                     ->where('divisi_id', $divisiId)
-                     ->where('jenis_surat_id', $jenisSuratId);
-        
-        // If tanggal_surat is provided, check for the same month only
-        if ($tanggalSurat) {
-            $monthYear = \Carbon\Carbon::parse($tanggalSurat)->format('Y-m');
-            $query->whereYear('tanggal_surat', substr($monthYear, 0, 4))
-                  ->whereMonth('tanggal_surat', substr($monthYear, 5, 2));
-        }
-        
-        $isDuplicate = $query->exists();
-
-        if ($isDuplicate) {
-            \Log::warning('Duplicate nomor urut detected:', [
-                'nomor_urut' => $nomorUrut,
-                'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId,
-                'tanggal_surat' => $tanggalSurat,
-                'month_specific' => $tanggalSurat ? true : false
-            ]);
-        }
-        
-        return $isDuplicate;
-    }
-
     // Helper: Get next available nomor urut using counter system
     public function getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat = null)
     {
-        // Extract month-year from tanggal_surat, default to current month
+        // ekstrak month-year dari tanggal_surat
         $monthYear = $tanggalSurat ? 
             \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
             \Carbon\Carbon::now()->format('Y-m');
             
-        \Log::info('Getting next nomor urut (preview only):', [
-            'divisi_id' => $divisiId,
-            'jenis_surat_id' => $jenisSuratId,
-            'tanggal_surat' => $tanggalSurat,
-            'month_year' => $monthYear
-        ]);
-        
         // Get jenis surat with counter
         $jenisSurat = JenisSurat::find($jenisSuratId);
         if (!$jenisSurat) {
@@ -1263,46 +937,24 @@ class SuratController extends Controller
         // Peek next counter WITHOUT incrementing (for preview/lock purposes)
         $nextCounter = $jenisSurat->peekNextCounter($monthYear);
         
-        \Log::info('Next counter preview from jenis surat:', [
-            'jenis_surat_id' => $jenisSuratId,
-            'next_counter_preview' => $nextCounter,
-            'target_month' => $monthYear
-        ]);
-        
         // Hapus lock lama user ini di divisi yang sama setelah update real-time
         if (\Auth::check()) {
             $deletedLocks = NomorUrutLock::where('user_id', \Auth::id())
                 ->where('divisi_id', $divisiId)
                 ->delete();
-                
-            if ($deletedLocks > 0) {
-                \Log::info('Cleaned up old locks after real-time update:', [
-                    'user_id' => \Auth::id(),
-                    'divisi_id' => $divisiId,
-                    'deleted_locks' => $deletedLocks
-                ]);
-            }
         }
         
         return $nextCounter;
     }
 
-    /**
-     * Actually increment the counter when finalizing the letter
-     */
+    // increment counter saat finalisasi surat
     public function incrementNomorUrut($jenisSuratId, $tanggalSurat = null)
     {
-        // Extract month-year from tanggal_surat, default to current month
+        // ekstrak month-year dari tanggal_surat
         $monthYear = $tanggalSurat ? 
             \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
             \Carbon\Carbon::now()->format('Y-m');
             
-        \Log::info('Incrementing nomor urut (final submit):', [
-            'jenis_surat_id' => $jenisSuratId,
-            'tanggal_surat' => $tanggalSurat,
-            'month_year' => $monthYear
-        ]);
-        
         $jenisSurat = JenisSurat::find($jenisSuratId);
         if (!$jenisSurat) {
             \Log::error('Jenis surat not found for increment: ' . $jenisSuratId);
@@ -1312,12 +964,6 @@ class SuratController extends Controller
         // Actually increment the counter for the specific month
         $finalCounter = $jenisSurat->incrementCounter($monthYear);
         
-        \Log::info('Final counter incremented:', [
-            'jenis_surat_id' => $jenisSuratId,
-            'month_year' => $monthYear,
-            'final_counter' => $finalCounter
-        ]);
-        
         return $finalCounter;
     }
 
@@ -1325,30 +971,28 @@ class SuratController extends Controller
     private function lockNomorUrut($divisiId, $jenisSuratId, $nomorUrut, $userId, $tanggalSurat = null)
     {
         try {
-            // Get month-year for lock specificity
             $monthYear = $tanggalSurat ? 
                 \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
                 \Carbon\Carbon::now()->format('Y-m');
                 
-            \Log::info('Locking nomor urut:', [
-                'divisi_id' => $divisiId,
-                'jenis_surat_id' => $jenisSuratId,
-                'nomor_urut' => $nomorUrut,
-                'user_id' => $userId,
-                'month_year' => $monthYear
-            ]);
-            
-            // Use the new static method that handles month_year
             NomorUrutLock::createOrExtendLock($divisiId, $jenisSuratId, $nomorUrut, $userId, $monthYear);
             
-            \Log::info('Nomor urut locked successfully');
-            
         } catch (\Exception $e) {
-            \Log::error('Error locking nomor urut: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
+            \Log::error('Error locking nomor urut: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    // Helper: Generate nomor surat format
+    private function generateNomorSurat($nomorUrut, $divisiId, $jenisSuratId, $tanggalSurat)
+    {
+        return sprintf('%03d/%s/%s/INTENS/%s/%04d',
+            $nomorUrut,
+            Division::find($divisiId)->kode_divisi,
+            JenisSurat::find($jenisSuratId)->kode_jenis,
+            $this->monthToRoman(date('n', strtotime($tanggalSurat))),
+            date('Y', strtotime($tanggalSurat))
+        );
     }
 
     public function preview(Request $request)
@@ -1395,13 +1039,7 @@ class SuratController extends Controller
             }
             
             // Generate nomor surat untuk preview
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $request->nomor_urut,
-                Division::find($request->divisi_id)->kode_divisi,
-                JenisSurat::find($request->jenis_surat_id)->kode_jenis,
-                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
-                date('Y', strtotime($request->tanggal_surat))
-            );
+            $nomorSurat = $this->generateNomorSurat($request->nomor_urut, $request->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
             
             \Log::info('Generated nomor surat for preview: ' . $nomorSurat);
             
@@ -1480,9 +1118,7 @@ class SuratController extends Controller
         }
     }
 
-    /**
-     * Serve file surat dengan permission check
-     */
+    // serve file dengan permission check
     public function serveFile($id)
     {
         try {
@@ -1527,9 +1163,7 @@ class SuratController extends Controller
         }
     }
 
-    /**
-     * Download file surat dengan permission check
-     */
+    // download file dengan permission check
     public function downloadFile($id)
     {
         try {
@@ -1577,19 +1211,14 @@ class SuratController extends Controller
         }
     }
 
-    // ================= MANUAL MODE METHODS =================
-
-    /**
-     * Show mode selection page
-     */
+    // ==========================================================================================
+    // Manual Mode
     public function showModeSelection()
     {
         return view('surat.mode_selection');
     }
 
-    /**
-     * Show manual form to generate nomor surat
-     */
+    // form manual generate nomor surat
     public function showManualForm()
     {
         $user = Auth::user();
@@ -1600,9 +1229,7 @@ class SuratController extends Controller
         ]);
     }
 
-    /**
-     * Generate nomor surat for manual mode
-     */
+    // generate nomor surat manual mode
     public function manualGenerate(Request $request)
     {
         try {
@@ -1629,13 +1256,7 @@ class SuratController extends Controller
             }
 
             // Generate nomor surat
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%04d',
-                $nextNomorUrut,
-                $division->kode_divisi,
-                $jenisSurat->kode_jenis,
-                $this->monthToRoman(date('n', strtotime($request->tanggal_surat))),
-                date('Y', strtotime($request->tanggal_surat))
-            );
+            $nomorSurat = $this->generateNomorSurat($nextNomorUrut, $user->divisi_id, $request->jenis_surat_id, $request->tanggal_surat);
 
             // Lock nomor urut for this user
             $this->lockNomorUrut($user->divisi_id, $request->jenis_surat_id, $nextNomorUrut, $user->id, $request->tanggal_surat);
@@ -1704,9 +1325,7 @@ class SuratController extends Controller
         ]);
     }
 
-    /**
-     * Show upload form for manual mode
-     */
+    // form upload manual mode
     public function showManualUpload()
     {
         $data = session('manual_surat_data');
@@ -1728,20 +1347,18 @@ class SuratController extends Controller
         ]);
     }
 
-    /**
-     * Handle file upload for manual mode
-     */
+    // handle upload file manual mode
     public function manualHandleUpload(Request $request)
     {
         try {
             $request->validate([
-                'file' => 'required|file|mimes:pdf,doc,docx|max:10240', // 10MB max
+                'file' => 'required|file|mimes:pdf,doc,docx|max:10240',
             ]);
 
-            // Try to get data from session first (old flow)
+            // Try to get data from session first
             $data = session('manual_surat_data');
             
-            // If no session data, get from current user's lock (new flow)
+            // If no session data, get from current user's lock 
             if (!$data) {
                 $user = Auth::user();
                 $currentLock = NomorUrutLock::where('user_id', $user->id)
@@ -1777,7 +1394,7 @@ class SuratController extends Controller
                     'nomor_surat' => $nomorSurat,
                     'divisi_id' => $currentLock->divisi_id,
                     'jenis_surat_id' => $currentLock->jenis_surat_id,
-                    'perihal' => 'Manual Upload', // Default since we don't store perihal in lock
+                    'perihal' => 'Manual Upload',
                     'tanggal_surat' => $tanggalSurat,
                     'tanggal_diterima' => now()->format('Y-m-d'),
                     'is_private' => false,
@@ -1924,7 +1541,7 @@ class SuratController extends Controller
             }
 
         } catch (\Exception $e) {
-            \Log::error('Error in manualHandleUpload: ' . $e->getMessage(), [
+            \Log::error('Error manualHandleUpload: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -1938,9 +1555,7 @@ class SuratController extends Controller
         }
     }
 
-    /**
-     * Verify nomor surat in extracted text
-     */
+    // verifikasi nomor surat di teks yang diekstrak
     private function verifyNomorSuratInText($extractedText, $expectedNomorSurat)
     {
         if (empty($extractedText)) {
@@ -1990,11 +1605,8 @@ class SuratController extends Controller
         ];
     }
 
-    // ================================= VERIFICATION PAGE =================================
-    
-    /**
-     * tampilkan halaman verification manual upload
-     */
+    // ==========================================================================================
+    // Verification Page
     public function manualVerification(Request $request)
     {
         $status = $request->get('status');
@@ -2030,9 +1642,7 @@ class SuratController extends Controller
         return redirect()->route('surat.manual.form');
     }
     
-    /**
-     * tampilkan form re-edit untuk manual upload yang gagal
-     */
+    // form re-edit untuk manual upload gagal
     public function manualReEdit()
     {
         $failedData = session('failed_verification');
@@ -2052,9 +1662,7 @@ class SuratController extends Controller
         ]);
     }
     
-    /**
-     * handle re-upload setelah edit
-     */
+    // handle re-upload setelah edit
     public function manualReUpload(Request $request)
     {
         try {
@@ -2068,7 +1676,7 @@ class SuratController extends Controller
                 'is_private' => 'nullable|boolean'
             ]);
 
-            // buat data baru dari form yang udah di-edit
+            // Reuse existing manual upload logic but with new data
             $data = [
                 'divisi_id' => $request->divisi_id,
                 'jenis_surat_id' => $request->jenis_surat_id,
@@ -2078,156 +1686,15 @@ class SuratController extends Controller
                 'is_private' => $request->boolean('is_private')
             ];
 
-            // generate nomor surat baru
-            $jenisSurat = JenisSurat::find($data['jenis_surat_id']);
-            $division = Division::find($data['divisi_id']);
+            // Store in session and redirect to normal manual upload flow
+            session(['manual_surat_data' => $data]);
+            session()->forget('failed_verification');
             
-            $nextNomorUrut = $this->getNextNomorUrut($data['divisi_id'], $data['jenis_surat_id'], $data['tanggal_surat']);
-            
-            $tanggalObj = new \DateTime($data['tanggal_surat']);
-            $month = $this->monthToRoman($tanggalObj->format('n'));
-            $year = $tanggalObj->format('Y');
-            
-            $nomorSurat = sprintf('%03d/%s/%s/INTENS/%s/%s',
-                $nextNomorUrut,
-                $division->kode_divisi,
-                $jenisSurat->kode_jenis,
-                $month,
-                $year
-            );
-            
-            $data['nomor_urut'] = $nextNomorUrut;
-            $data['nomor_surat'] = $nomorSurat;
-
-            // proses file upload yang sama seperti di manualHandleUpload
-            $file = $request->file('file');
-            $originalName = $file->getClientOriginalName();
-            $fileSize = $file->getSize();
-            $mimeType = $file->getMimeType();
-
-            // simpan file
-            $timestamp = date('Y-m-d_H-i-s');
-            $user = Auth::user();
-            $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $descriptiveName = sprintf(
-                'surat_manual_%s_%s_%s.%s',
-                $division->kode_divisi,
-                $jenisSurat->kode_jenis,
-                $timestamp,
-                $fileExtension
-            );
-
-            $filePath = $file->storeAs('letters', $descriptiveName);
-
-            // convert DOCX ke PDF kalau perlu
-            if (in_array($fileExtension, ['doc', 'docx'])) {
-                $fullPath = storage_path('app/' . $filePath);
-                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
-                
-                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
-                    $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
-                    $newFilePath = 'letters/' . $pdfDescriptiveName;
-                    
-                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
-                    unlink($convertedPdfPath);
-                    Storage::delete($filePath);
-                    
-                    $filePath = $newFilePath;
-                    $fileExtension = 'pdf';
-                    $mimeType = 'application/pdf';
-                    $fileSize = Storage::size($filePath);
-                }
-            }
-
-            // ekstrak teks untuk verifikasi
-            $extractedText = '';
-            $ocrError = null;
-
-            if ($fileExtension === 'pdf') {
-                try {
-                    $parser = new \Smalot\PdfParser\Parser();
-                    $fullPath = storage_path('app/' . $filePath);
-                    $pdf = $parser->parseFile($fullPath);
-                    foreach ($pdf->getPages() as $page) {
-                        $extractedText .= $page->getText() . ' ';
-                    }
-                } catch (\Exception $e) {
-                    $ocrError = 'Error ekstraksi teks (PDF Parser): ' . $e->getMessage();
-                }
-            }
-
-            // verifikasi nomor surat di file
-            $verificationResult = $this->verifyNomorSuratInText($extractedText, $nomorSurat);
-
-            if ($verificationResult['success']) {
-                // verifikasi berhasil - simpan ke database
-                $surat = Surat::create([
-                    'nomor_urut' => $data['nomor_urut'],
-                    'nomor_surat' => $data['nomor_surat'],
-                    'divisi_id' => $data['divisi_id'],
-                    'jenis_surat_id' => $data['jenis_surat_id'],
-                    'perihal' => $data['perihal'],
-                    'tanggal_surat' => $data['tanggal_surat'],
-                    'tanggal_diterima' => $data['tanggal_diterima'],
-                    'file_path' => $filePath,
-                    'file_size' => $fileSize,
-                    'mime_type' => $mimeType,
-                    'is_private' => $data['is_private'],
-                    'uploaded_by' => Auth::id(),
-                ]);
-
-                // increment counter
-                $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
-
-                // clear session data
-                session()->forget('failed_verification');
-
-                return redirect()->route('surat.manual.verification', [
-                    'status' => 'success',
-                    'surat_id' => $surat->id
-                ]);
-                
-            } else {
-                // masih ga sesuai - hapus file dan kembali ke re-edit
-                Storage::delete($filePath);
-                
-                // update session dengan error baru
-                $failedData = session('failed_verification');
-                $failedData['error_message'] = $verificationResult['error'];
-                $failedData['expected_nomor_surat'] = $nomorSurat;
-                $failedData['found_nomor_surat'] = $verificationResult['found_nomor'];
-                $failedData['extracted_text'] = $extractedText;
-                $failedData['ocr_error'] = $ocrError;
-                $failedData['original_filename'] = $originalName;
-                $failedData['data'] = $data; // update data dengan yang baru
-                
-                session(['failed_verification' => $failedData]);
-                
-                return redirect()->route('surat.manual.verification', ['status' => 'failed'])
-                    ->withErrors(['verification' => 'File masih belum sesuai. Silakan periksa kembali nomor surat di file.']);
-            }
+            return redirect()->route('surat.manual.handleUpload')->with('file', $request->file('file'));
 
         } catch (\Exception $e) {
-            \Log::error('Error in manualReUpload: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            \Log::error('Error manualReUpload: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
         }
-    }
-
-    /**
-     * Show manual verification page
-     */
-    public function showManualVerification(Request $request)
-    {
-        if ($request->has('success')) {
-            return view('surat.manual.verification', [
-                'verification_success' => true,
-                'message' => 'Surat berhasil diupload dan disimpan!'
-            ]);
-        }
-        
-        return redirect()->route('surat.manual.form');
     }
 }

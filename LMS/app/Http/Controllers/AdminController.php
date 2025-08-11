@@ -26,8 +26,8 @@ class AdminController extends Controller
         $this->middleware(['auth', 'admin']);
     }
 
-    // ================================= DASHBOARD =================================
-    
+    // ==========================================================================================
+    // Dashboard
     public function dashboard(): View
     {
         // statistik dashboard
@@ -55,9 +55,7 @@ class AdminController extends Controller
         return view('admin.dashboard', compact('stats', 'recentSurat', 'recentUsers'));
     }
 
-    /**
-     * Show all surat with admin controls
-     */
+    // daftar semua surat dengan kontrol admin
     public function suratIndex(Request $request)
     {
         $query = Surat::with(['uploader', 'division', 'jenisSurat']);
@@ -101,9 +99,7 @@ class AdminController extends Controller
         return view('admin.surat.index', compact('surat', 'divisions', 'jenisSurat'));
     }
 
-    /**
-     * Show surat edit form
-     */
+    // form edit surat
     public function suratEdit($id)
     {
         $surat = Surat::with(['uploader', 'division', 'jenisSurat'])->findOrFail($id);
@@ -117,9 +113,7 @@ class AdminController extends Controller
         return view('admin.surat.edit', compact('surat', 'divisions', 'jenisSurat', 'users'));
     }
 
-    /**
-     * Update surat
-     */
+    // update surat
     public function suratUpdate(Request $request, $id)
     {
         $surat = Surat::findOrFail($id);
@@ -165,7 +159,7 @@ class AdminController extends Controller
             'is_private' => $request->has('is_private'),
         ]);
 
-        // Handle private access
+        // handle akses privat
         if ($request->has('is_private') && $request->has('selected_users')) {
             // Remove existing access
             SuratAccess::where('surat_id', $surat->id)->delete();
@@ -186,22 +180,20 @@ class AdminController extends Controller
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diperbarui!');
     }
 
-    /**
-     * Delete surat
-     */
+    // hapus surat
     public function suratDestroy($id)
     {
         $surat = Surat::findOrFail($id);
         
-        // Delete file
+        // hapus file
         if (Storage::exists($surat->file_path)) {
             Storage::delete($surat->file_path);
         }
         
-        // Delete access records
+        // hapus access records
         SuratAccess::where('surat_id', $surat->id)->delete();
         
-        // Delete surat
+        // hapus surat
         $surat->delete();
 
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil dihapus!');
@@ -283,13 +275,13 @@ class AdminController extends Controller
                 // Store the converted PDF
                 Storage::put($newFilePath, file_get_contents($convertedPdfPath));
                 
-                // Delete the temporary converted file
+                // hapus file temporary
                 unlink($convertedPdfPath);
                 
-                // Delete the original Word file
+                // hapus file Word asli
                 Storage::delete($filePath);
                 
-                // Update variables to use the PDF version
+                // update variabel untuk PDF
                 $filePath = $newFilePath;
                 $fileExtension = 'pdf';
                 $mimeType = 'application/pdf';
@@ -633,7 +625,7 @@ class AdminController extends Controller
 
         $division->update($request->all());
 
-        // Update division members for one-to-many relationship
+        // update anggota divisi
         if ($request->has('division_users') && is_array($request->input('division_users'))) {
             // First, remove all users from this division
             User::where('divisi_id', $division->id)->update(['divisi_id' => null]);

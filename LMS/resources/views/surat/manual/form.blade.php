@@ -145,7 +145,9 @@
 </div>
 
 <script>
-// ================================= FUNGSI UTAMA =================================
+// =================================
+// FUNGSI UTAMA
+// =================================
 
 // konversi bulan ke romawi
 function monthToRoman(month) {
@@ -174,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let inactivityTimeout = null;
     let debounceTimer = null; // Add debounce timer
     
-    // ================================= UPDATE NOMOR SURAT =================================
+    // ==========================================================================================
     
     // update nomor surat otomatis pas form berubah
     function updateNomorSurat() {
@@ -265,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateNomorSurat();
     }
     
-    // ================================= LOCK NOMOR SURAT =================================
+    // ==========================================================================================
     
     // lock nomor surat
     function lockNomorSurat(jenisSuratId, nomorUrut) {
@@ -294,7 +296,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Setup lock cleanup system (same as automatic mode)
+    // Setup lock cleanup system
     function setupLockCleanup() {
         // Keep lock alive every 25 minutes (5 minutes before 30-minute expiry)
         if (window.lockExtensionInterval) {
@@ -323,7 +325,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => {
                 console.warn('Manual mode: Heartbeat failed:', error);
             });
-        }, 5 * 60 * 1000); // 5 minutes
+        }, 5 * 60 * 1000); //duration
         
         // Track user activity
         document.addEventListener('keypress', trackActivity);
@@ -331,7 +333,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('scroll', trackActivity);
         document.addEventListener('mousemove', trackActivity);
         
-        // Handle page unload/leave events (including navigation to homepage)
+        // Handle page unload/leave events
         window.addEventListener('beforeunload', function(e) {
             // Cancel lock when user is actually leaving the page
             if (currentLockData) {
@@ -352,7 +354,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // Handle visibility change (tab switching)
+        // Handle visibility change
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible') {
                 // User returned to tab, extend lock if still reasonable
@@ -377,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
             clearTimeout(inactivityTimeout);
         }
         
-        // Set 30-minute inactivity timeout (same as automatic mode)
+        // Set 30-minute inactivity timeout
         inactivityTimeout = setTimeout(function() {
             if (confirm('Anda tidak aktif selama 30 menit. Lanjutkan proses upload?')) {
                 extendLock();
@@ -394,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Session expired karena tidak aktif. Anda akan diarahkan ke halaman pemilihan mode.');
                 window.location.href = '{{ route("surat.mode.selection") }}';
             }
-        }, 30 * 60 * 1000); // 30 minutes (consistent with automatic mode)
+        }, 30 * 60 * 1000); // 30 minutes
     }
     
     // Cleanup on window close
@@ -441,16 +443,16 @@ document.addEventListener('DOMContentLoaded', function() {
         updateNomorSuratInstant(); // Instant update for date changes
     });
     
-    // Real-time update saat user mengetik tanggal (dengan debounce)
+    // Real-time update saat user mengetik tanggal
     tanggalSuratInput.addEventListener('input', function() {
         console.log('Tanggal surat input:', this.value);
-        updateNomorSuratDebounced(); // Debounced update for typing
+        updateNomorSuratDebounced(); 
     });
     
-    // Real-time update untuk perihal (dengan debounce)
+    // Real-time update untuk perihal
     perihalInput.addEventListener('input', function() {
         console.log('Perihal input:', this.value);
-        updateNomorSuratDebounced(); // Debounced update for typing
+        updateNomorSuratDebounced();
     });
     
     // File input change
@@ -464,12 +466,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Upload button click
     uploadBtn.addEventListener('click', function() {
         if (!fileInput.files.length) {
-            alert('Pilih file dulu bro!');
+            alert('Pilih file terlebih dahulu!');
             return;
         }
         
         if (!currentNomorSurat) {
-            alert('Generate nomor surat dulu sebelum upload!');
+            alert('Generate nomor surat terlebih dahulu sebelum upload!');
             return;
         }
         
@@ -500,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // gagal verifikasi dengan redirect
                 window.location.href = data.redirect;
             } else if (data && data.success === false && data.message) {
-                // error message biasa
+                // error
                 verificationResult.className = 'alert alert-danger';
                 verificationResult.innerHTML = '<i class="fas fa-times-circle"></i> ' + data.message;
                 verificationResult.style.display = 'block';
@@ -525,7 +527,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (jenisSuratSelect.value && tanggalSuratInput.value && perihalInput.value.trim()) {
             updateNomorSuratInstant();
         }
-    }, 500); // Small delay to ensure everything is loaded
+    }, 500);
 });
 
 function copyNomorSurat() {
@@ -535,7 +537,7 @@ function copyNomorSurat() {
         return;
     }
     
-    // Try modern clipboard API first
+    // Clipboard
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(currentNomorSurat).then(function() {
             const btn = event.target.closest('button');
@@ -549,7 +551,6 @@ function copyNomorSurat() {
             fallbackCopyToClipboard(currentNomorSurat);
         });
     } else {
-        // Fallback for older browsers or non-secure contexts
         fallbackCopyToClipboard(currentNomorSurat);
     }
 }

@@ -8,8 +8,8 @@ use Illuminate\Http\Request;
 
 class LoginController extends Controller
 {
-    // ================================= LOGIN CONTROLLER =================================
-    
+    // ==========================================================================================
+    // Login Controller
     use AuthenticatesUsers;
 
     // redirect ke home setelah login

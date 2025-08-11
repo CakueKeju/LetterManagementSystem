@@ -11,36 +11,36 @@ use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
-    // ================================= CONSTRUCTOR =================================
-    
+    // ==========================================================================================
+    // Constructor
     public function __construct()
     {
         $this->middleware('auth');
     }
 
-    // ================================= DASHBOARD UTAMA =================================
-    
+    // ==========================================================================================
+    // Dashboard Utama
     public function index(Request $request)
     {
         $query = Surat::query();
 
-        // filter berdasarkan akses user
+        // filter akses user
         $user = Auth::user();
         
-        // admin bisa lihat semua surat
+        // admin lihat semua
         if (!$user->is_admin) {
-            // non-admin: lihat surat publik dari divisi sama ATAU surat privat yang bisa diakses
+            // non-admin: surat publik divisi sama ATAU privat dengan akses
             $query->where(function($q) use ($user) {
-                // surat publik dari divisi sama
+                // surat publik divisi sama
                 $q->where(function($subQ) use ($user) {
                     $subQ->where('is_private', false)
                          ->where('divisi_id', $user->divisi_id);
                 });
                 
-                // ATAU surat privat yang user upload sendiri
+                // ATAU privat upload sendiri
                 $q->orWhere('uploaded_by', $user->id);
                 
-                // ATAU surat privat yang user punya akses
+                // ATAU privat dengan akses
                 $q->orWhereExists(function($existsQuery) use ($user) {
                     $existsQuery->select(\DB::raw(1))
                                ->from('surat_access')
@@ -50,7 +50,7 @@ class HomeController extends Controller
             });
         }
 
-        // Additional filtering
+        // Filtering
         if ($request->filled('divisi_id')) {
             $query->where('divisi_id', $request->divisi_id);
         }
