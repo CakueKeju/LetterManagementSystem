@@ -1,213 +1,128 @@
 # Letter Management System (LMS)
 
-A web-based platform for uploading, managing, and searching official letters within your organization. Built with Laravel 12, Bootstrap 5, and modern PHP/JS tooling.
+A modern web-based platform for uploading, managing, and searching official letters within organizations. Built with Laravel 12, Bootstrap 5, and intelligent document processing.
 
----
+## ✨ Features
 
-## Table of Contents
+- **Smart Document Processing** - Automatic text extraction from PDF, Word, and images (OCR)
+- **Intelligent Numbering** - Auto-generated letter numbers with duplicate detection
+- **Access Control** - Private/public letters with role-based permissions
+- **Multi-Division Support** - Organize by departments with custom letter types
+- **Admin Dashboard** - Complete user, division, and document management
+- **Modern UI** - Responsive design with Bootstrap 5
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [Main Packages & Dependencies](#main-packages--dependencies)
-- [Build & Development](#build--development)
-- [Authentication & User Management](#authentication--user-management)
-- [Letter Management](#letter-management)
-- [Admin Features](#admin-features)
-- [Routes Overview](#routes-overview)
-- [Controllers Overview](#controllers-overview)
-- [License](#license)
+## 🚀 Quick Start
 
----
-
-## Features
-
-- User authentication (login only; registration by admin only)
-- Upload letters (PDF, Word, Image)
-- Automatic text extraction (PDF, Word, OCR for images)
-- Duplicate detection for letter numbers
-- Private/public letter access
-- Division and letter type management
-- Admin dashboard for user, division, and letter type management
-
----
-
-## Requirements
-
-- PHP ^8.2
-- Composer
-- Node.js & npm
-- MySQL or compatible database
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) (for image text extraction)
-- [LibreOffice](https://www.libreoffice.org/) (recommended for DOC/DOCX parsing, if needed)
-
----
-
-## Installation
-
-```sh
+```bash
+# Clone and setup
 git clone https://github.com/CakueKeju/LetterManagementSystem
 cd LetterManagementSystem/LMS
 
-composer install
-npm install
+# Install dependencies
+composer install && npm install
 
+# Configure environment
 cp .env.example .env
-# Edit .env for your database and mail settings
+# Edit .env with your database settings
 
+# Setup application
 php artisan key:generate
 php artisan migrate
-# (Optional) Seed database:
 php artisan db:seed
 
+# Start development
+npm run dev & php artisan serve
+```
+
+## 📋 Requirements
+
+- **PHP** ^8.2
+- **Composer** & **Node.js**
+- **MySQL** database
+- **Tesseract OCR** (for image text extraction)
+- **LibreOffice** (optional, for enhanced Word processing)
+
+## 🏗️ Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| **Backend** | Laravel 12, PHP 8.2+ |
+| **Frontend** | Bootstrap 5, Vanilla JS, Vite |
+| **Database** | MySQL with Eloquent ORM |
+| **Document Processing** | PDF Parser, PHPWord, Tesseract OCR |
+| **Authentication** | Laravel UI with custom admin controls |
+
+## 📁 Key Structure
+
+```
+LMS/
+├── app/Http/Controllers/    # Main application logic
+├── app/Models/             # Database models
+├── resources/views/        # Blade templates
+├── routes/web.php         # Application routes
+├── database/migrations/   # Database schema
+└── storage/app/letters/   # Uploaded documents
+```
+
+## 🔐 Authentication & Roles
+
+- **Users**: Upload and manage letters within their division
+- **Admins**: Full system access including user management
+- **Registration**: Admin-only (public registration disabled)
+
+## 📄 Document Management
+
+- **Supported Formats**: PDF, DOC/DOCX, Images (JPG, PNG)
+- **Auto-numbering**: Format: `{number}/{division}/{type}/INTENS/{year}`
+- **Privacy Controls**: Public (division-wide) or Private (selected users)
+- **Duplicate Detection**: Prevents conflicting letter numbers
+
+## 🛡️ Admin Features
+
+- **Dashboard**: System overview and statistics
+- **User Management**: Create, edit, manage user accounts
+- **Division Management**: Organize departments and access
+- **Document Types**: Configure letter categories
+- **System Monitoring**: Track uploads and user activity
+
+## 🚦 Development
+
+```bash
+# Development mode
 npm run dev
 php artisan serve
+
+# Production build
+npm run build
+
+# Run tests
+php artisan test
 ```
 
----
+## 📝 Configuration
 
-## Configuration
+Key environment variables in `.env`:
+- `DB_*` - Database connection
+- `APP_URL` - Application URL
+- `MAIL_*` - Email settings (optional)
 
-- **.env**: Set your database, mail, and other environment variables.
-- **Tesseract OCR**: Must be installed and available in your system path for image text extraction.
-- **Storage**: Uploaded files are stored in `storage/app/letters`.
+## 📖 API Endpoints
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/surat` | List user letters |
+| `POST` | `/surat/upload` | Upload new letter |
+| `GET` | `/admin` | Admin dashboard |
+| `GET` | `/admin/users` | Manage users |
 
-## Project Structure
+## 🤝 Contributing
 
-- `app/Http/Controllers/` - Main controllers (SuratController, AdminController, Auth)
-- `app/Models/` - Eloquent models (Surat, Division, JenisSurat, User, etc.)
-- `resources/views/` - Blade templates (admin, surat, auth, layouts)
-- `routes/web.php` - Main web routes
-- `database/migrations/` - Database schema
-- `public/` - Public assets and entry point
-- `config/` - Laravel configuration files
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
----
+## 📄 License
 
-## Main Packages & Dependencies
-
-**PHP (composer.json):**
-- `laravel/framework` ^12.0
-- `laravel/ui` ^4.6 (UI scaffolding)
-- `maatwebsite/excel` ^1.1 (Excel import/export)
-- `phpoffice/phpword` ^1.3 (Word file parsing)
-- `smalot/pdfparser` ^2.12 (PDF parsing)
-- `thiagoalessio/tesseract_ocr` ^2.13 (OCR for images)
-- `intervention/image` ^3.11 (Image handling)
-
-**JS (package.json):**
-- `bootstrap` ^5.2.3
-- `axios` ^1.8.2
-- `tailwindcss` ^4.0.0
-- `vite` ^6.2.4
-- `laravel-vite-plugin` ^1.2.0
-- `@popperjs/core`, `sass`, `concurrently`
-
-**Build (vite.config.js):**
-```js
-import { defineConfig } from 'vite';
-import laravel from 'laravel-vite-plugin';
-
-export default defineConfig({
-    plugins: [
-        laravel({
-            input: [
-                'resources/sass/app.scss',
-                'resources/js/app.js',
-            ],
-            refresh: true,
-        }),
-    ],
-});
-```
-
----
-
-## Build & Development
-
-- **Development:** `npm run dev`
-- **Production build:** `npm run build`
-- **Run Laravel server:** `php artisan serve`
-- **Run all (concurrently):** `composer run dev`
-
----
-
-## Authentication & User Management
-
-- **Login:** Only existing users can log in.
-- **Registration:** Disabled for public. Only admins can add users via the admin dashboard.
-- **Roles:** Users can be regular or admin (`is_admin` flag).
-- **Division:** Each user belongs to a division.
-
----
-
-## Letter Management
-
-- **Upload:** Users can upload PDF, Word, or image files.
-- **Text Extraction:** Automatic extraction using PDF parser, Word parser, or Tesseract OCR for images.
-- **Duplicate Check:** System checks for duplicate `nomor_urut` (letter number) within the same division.
-- **Private/Public:** Letters can be marked as private (access only to selected users) or public (all users in the division).
-- **Letter Code:** Generated as `{nomor_urut}/{kode_divisi}/{kode_jenis}/INTENS/{year}`.
-
----
-
-## Admin Features
-
-- **Dashboard:** Overview of stats, recent letters, and users.
-- **User Management:** Add, edit, delete users. Only admins can register new users.
-- **Division Management:** Add, edit, delete divisions.
-- **Jenis Surat Management:** Add, edit, delete letter types.
-- **Letter Management:** Edit, delete any letter.
-
----
-
-## Routes Overview
-
-**Main User Routes:**
-- `/` - Welcome page
-- `/login` - Login page
-- `/surat` - List letters
-- `/surat/upload` - Upload letter
-- `/surat/confirm` - Confirm extracted data
-- `/surat/store` - Store letter
-- `/surat/users-for-access` - AJAX: get users for private access
-
-**Admin Routes (prefix `/admin`):**
-- `/admin` - Dashboard
-- `/admin/surat` - Manage all letters
-- `/admin/users` - Manage users
-- `/admin/divisions` - Manage divisions
-- `/admin/jenis-surat` - Manage letter types
-
----
-
-## Controllers Overview
-
-### SuratController
-
-- `showUploadForm()` - Show upload form
-- `handleUpload(Request $request)` - Handle file upload, extract text, check duplicates
-- `showConfirmForm(Request $request)` - Show confirmation form for extracted data
-- `store(Request $request)` - Store new letter
-- `getUsersForAccess(Request $request)` - AJAX: get users for private access
-- `index(Request $request)` - List/filter letters
-
-### AdminController
-
-- `dashboard()` - Show admin dashboard
-- `suratIndex()`, `suratEdit()`, `suratUpdate()`, `suratDestroy()` - Manage letters
-- `usersIndex()`, `usersCreate()`, `usersStore()`, `usersEdit()`, `usersUpdate()`, `usersDestroy()` - Manage users
-- `divisionsIndex()`, `divisionsCreate()`, `divisionsStore()`, `divisionsEdit()`, `divisionsUpdate()`, `divisionsDestroy()` - Manage divisions
-- `jenisSuratIndex()`, `jenisSuratCreate()`, `jenisSuratStore()`, `jenisSuratEdit()`, `jenisSuratUpdate()`, `jenisSuratDestroy()` - Manage letter types
-
----
-
-## License
-
-<!-- This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT). -->
-
----
+This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
