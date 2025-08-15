@@ -64,15 +64,15 @@
                             <div class="feature-list mb-4">
                                 <div class="feature-item">
                                     <i class="fas fa-check-circle text-success me-2"></i>
-                                    Nomor tampil otomatis
+                                    Nomor ditampilkan secara otomatis
                                 </div>
                                 <div class="feature-item">
                                     <i class="fas fa-check-circle text-success me-2"></i>
-                                    Copy nomor ke file
+                                    Salin nomor ke file
                                 </div>
                                 <div class="feature-item">
                                     <i class="fas fa-check-circle text-success me-2"></i>
-                                    Upload langsung
+                                    Upload file
                                 </div>
                             </div>
                             

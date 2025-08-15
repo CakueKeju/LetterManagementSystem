@@ -653,28 +653,79 @@ trait DocumentProcessor
 
     /**
      * Fill Word document with nomor surat by finding "Nomor :" field
-     * Simple and direct approach to find and fill the nomor field
+     * Flexible approach that finds any text after "Nomor :" and replaces it
      */
     private function fillWordWithNomorSuratSimple($wordPath, $nomorSurat)
     {
         try {
+            \Log::info('Starting flexible Word fill process:', [
+                'word_path' => $wordPath,
+                'nomor_surat' => $nomorSurat,
+                'file_exists' => file_exists($wordPath)
+            ]);
+
             $tempPath = storage_path('app/filled_word_' . uniqid() . '.docx');
             copy($wordPath, $tempPath);
-            
-            // Skip Word processing, just return copy
-            \Log::info('Skipping Word filling to avoid ZIP errors, returning copy');
+
+            // Load the Word document
+            $phpWord = IOFactory::load($tempPath);
+            $foundPlaceholder = false;
+
+            // Search through all sections
+            foreach ($phpWord->getSections() as $section) {
+                // Check headers
+                foreach ($section->getHeaders() as $header) {
+                    if ($this->searchAndFillNomorInElementFlexible($header, $nomorSurat)) {
+                        $foundPlaceholder = true;
+                        break 2; // Exit both loops
+                    }
+                }
+                
+                // Check main content
+                foreach ($section->getElements() as $element) {
+                    if ($this->searchAndFillNomorInElementFlexible($element, $nomorSurat)) {
+                        $foundPlaceholder = true;
+                        break 2; // Exit both loops
+                    }
+                }
+                
+                // Check footers
+                foreach ($section->getFooters() as $footer) {
+                    if ($this->searchAndFillNomorInElementFlexible($footer, $nomorSurat)) {
+                        $foundPlaceholder = true;
+                        break 2; // Exit both loops
+                    }
+                }
+            }
+
+            // Save the modified Word document
+            $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
+            $objWriter->save($tempPath);
+
+            \Log::info('Word document processed:', [
+                'temp_path' => $tempPath,
+                'placeholder_found' => $foundPlaceholder ? 'yes' : 'no'
+            ]);
+
+            if (!$foundPlaceholder) {
+                \Log::warning('No "Nomor :" pattern found in Word document: ' . $wordPath);
+            }
+
             return $tempPath;
             
         } catch (\Exception $e) {
-            \Log::error('Error in fillWordWithNomorSuratSimple: ' . $e->getMessage());
+            \Log::error('Error in fillWordWithNomorSuratSimple: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return null;
         }
     }
-    
+
     /**
-     * Recursively search for "Nomor :" field and fill it
+     * Recursively search for "Nomor :" field and fill it with flexible approach
+     * This method finds "Nomor :" with any spacing and replaces everything after it
      */
-    private function searchAndFillNomorInElement($element, $nomorSurat)
+    private function searchAndFillNomorInElementFlexible($element, $nomorSurat)
     {
         $found = false;
         
@@ -684,11 +735,14 @@ trait DocumentProcessor
                 if ($textElement instanceof \PhpOffice\PhpWord\Element\Text) {
                     $text = $textElement->getText();
                     
-                    // Look for "Nomor :" pattern (case insensitive)
+                    // Flexible pattern to find "Nomor" with any spacing followed by ":"
                     if (preg_match('/Nomor\s*:\s*/i', $text)) {
-                        \Log::info('Found Nomor field in TextRun:', ['original_text' => $text]);
+                        \Log::info('Found Nomor field in TextRun:', [
+                            'original_text' => $text,
+                            'nomor_surat' => $nomorSurat
+                        ]);
                         
-                        // Replace the entire text after "Nomor :" with the nomor surat
+                        // Replace everything after "Nomor :" with the nomor surat
                         $newText = preg_replace('/Nomor\s*:\s*.*/i', 'Nomor : ' . $nomorSurat, $text);
                         $textElement->setText($newText);
                         
@@ -703,7 +757,10 @@ trait DocumentProcessor
             $text = $element->getText();
             
             if (preg_match('/Nomor\s*:\s*/i', $text)) {
-                \Log::info('Found Nomor field in Text element:', ['original_text' => $text]);
+                \Log::info('Found Nomor field in Text element:', [
+                    'original_text' => $text,
+                    'nomor_surat' => $nomorSurat
+                ]);
                 
                 $newText = preg_replace('/Nomor\s*:\s*.*/i', 'Nomor : ' . $nomorSurat, $text);
                 $element->setText($newText);
@@ -717,7 +774,9 @@ trait DocumentProcessor
             foreach ($element->getRows() as $row) {
                 foreach ($row->getCells() as $cell) {
                     foreach ($cell->getElements() as $cellElement) {
-                        $found = $this->searchAndFillNomorInElement($cellElement, $nomorSurat) || $found;
+                        if ($this->searchAndFillNomorInElementFlexible($cellElement, $nomorSurat)) {
+                            $found = true;
+                        }
                     }
                 }
             }
@@ -725,7 +784,9 @@ trait DocumentProcessor
         // Handle Container elements (like sections)
         elseif (method_exists($element, 'getElements')) {
             foreach ($element->getElements() as $subElement) {
-                $found = $this->searchAndFillNomorInElement($subElement, $nomorSurat) || $found;
+                if ($this->searchAndFillNomorInElementFlexible($subElement, $nomorSurat)) {
+                    $found = true;
+                }
             }
         }
         
@@ -1044,7 +1105,7 @@ trait DocumentProcessor
             }
             
             if (!$command) {
-                \Log::error('LibreOffice not found in any of the expected paths');
+                \Log::error('LibreOffice not found');
                 $this->deleteDirectory($outputDir);
                 return null;
             }

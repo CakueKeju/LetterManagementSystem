@@ -4,8 +4,6 @@
 <div class="container">
     <h2>Preview Final Surat</h2>
     
-
-    
     <div class="alert alert-info">
         <i class="fas fa-info-circle"></i>
         <strong>Preview:</strong> Berikut adalah preview surat yang akan disimpan. Pastikan semua data sudah benar sebelum melanjutkan.
@@ -116,7 +114,6 @@
 </form>
 
 <script>
-// Simple preview function
 function previewFile() {
     var form = document.getElementById('previewForm');
     if (form) {
@@ -125,14 +122,6 @@ function previewFile() {
         form.submit();
     } else {
         alert('Error: Preview form not found. Please refresh the page and try again.');
-    }
-}
-
-function downloadFile() {
-    var form = document.getElementById('previewForm');
-    if (form) {
-        form.method = 'POST';
-        form.submit();
     }
 }
 </script>

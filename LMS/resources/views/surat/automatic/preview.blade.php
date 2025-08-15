@@ -91,32 +91,6 @@
     </div>
 </div>
 
-<!-- Preview Modal -->
-<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="previewModalLabel">Preview File</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="previewContent" class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2">Loading preview...</p>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                <button type="button" class="btn btn-primary" onclick="downloadFile()">
-                    <i class="fas fa-download"></i> Download
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <form id="previewForm" action="{{ route('surat.preview') }}" method="POST" target="_blank" style="display:none;">
     @csrf
     <input type="hidden" name="file_path" id="preview_file_path" value="{{ $file_path }}">
@@ -127,118 +101,15 @@
 </form>
 
 <script>
-// Simple preview function
 function previewFile() {
-    console.log('Preview button clicked');
-    
-    // Simple approach - just submit the form to open in new tab
     var form = document.getElementById('previewForm');
     if (form) {
         form.target = '_blank';
-        form.method = 'POST'; // Ensure it's POST
+        form.method = 'POST';
         form.submit();
     } else {
-        console.error('Preview form not found');
+        alert('Error: Preview form not found. Please refresh the page and try again.');
     }
 }
-
-// Alternative modal approach if Bootstrap is available
-function previewFileModal() {
-    console.log('Preview modal button clicked');
-    
-    // Check if Bootstrap is available
-    if (typeof bootstrap !== 'undefined') {
-        var modalElement = document.getElementById('previewModal');
-        if (modalElement) {
-            var modal = new bootstrap.Modal(modalElement);
-            modal.show();
-            
-            // Load content using POST
-            var form = document.getElementById('previewForm');
-            var formData = new FormData(form);
-            var previewUrl = '{{ route("surat.preview") }}';
-            
-            var previewContent = document.getElementById('previewContent');
-            var fileExtension = '{{ pathinfo($file_path, PATHINFO_EXTENSION) }}';
-            
-            if (fileExtension.toLowerCase() === 'pdf') {
-                // For PDF, create a temporary form to POST
-                var tempForm = document.createElement('form');
-                tempForm.method = 'POST';
-                tempForm.action = previewUrl;
-                tempForm.target = 'preview_iframe';
-                tempForm.style.display = 'none';
-                
-                // Add CSRF token
-                var csrfToken = document.createElement('input');
-                csrfToken.type = 'hidden';
-                csrfToken.name = '_token';
-                csrfToken.value = '{{ csrf_token() }}';
-                tempForm.appendChild(csrfToken);
-                
-                // Add form data
-                for (var pair of formData.entries()) {
-                    var input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = pair[0];
-                    input.value = pair[1];
-                    tempForm.appendChild(input);
-                }
-                
-                document.body.appendChild(tempForm);
-                
-                previewContent.innerHTML = `
-                    <iframe name="preview_iframe" 
-                            width="100%" 
-                            height="600px" 
-                            style="border: none;">
-                    </iframe>
-                `;
-                
-                tempForm.submit();
-                document.body.removeChild(tempForm);
-            } else {
-                // For other files, show download link
-                previewContent.innerHTML = `
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>File Preview:</strong> File ini tidak dapat ditampilkan dalam browser.
-                        <br><br>
-                        <button onclick="downloadFile()" class="btn btn-primary">
-                            <i class="fas fa-download"></i> Download File
-                        </button>
-                    </div>
-                `;
-            }
-        } else {
-            console.error('Modal element not found');
-            // Fallback to simple preview
-            previewFile();
-        }
-    } else {
-        console.log('Bootstrap not available, using simple preview');
-        // Fallback to simple preview
-        previewFile();
-    }
-}
-
-function downloadFile() {
-    console.log('Download button clicked');
-    var form = document.getElementById('previewForm');
-    if (form) {
-        form.method = 'POST'; // Ensure it's POST
-        form.submit();
-    }
-}
-
-// Test if everything is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded');
-    console.log('Bootstrap available:', typeof bootstrap !== 'undefined');
-    console.log('Modal element exists:', document.getElementById('previewModal') !== null);
-    console.log('Preview form exists:', document.getElementById('previewForm') !== null);
-    console.log('Preview form method:', document.getElementById('previewForm') ? document.getElementById('previewForm').method : 'N/A');
-    console.log('Preview form action:', document.getElementById('previewForm') ? document.getElementById('previewForm').action : 'N/A');
-});
 </script>
 @endsection 

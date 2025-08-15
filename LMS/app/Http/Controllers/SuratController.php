@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Surat;
+use App\Models\SuratAccess;
 use App\Models\Division;
 use App\Models\JenisSurat;
 use Illuminate\Http\Request;
@@ -89,44 +90,12 @@ class SuratController extends Controller
                 'file_size' => Storage::size($filePath)
             ]);
 
-            // konversi DOCX ke PDF pakai LibreOffice
-            if (in_array($fileExtension, ['doc', 'docx'])) {
-                \Log::info('Konversi Word ke PDF pakai LibreOffice');
-                $fullPath = storage_path('app/' . $filePath);
-                
-                // konversi ke PDF
-                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
-                
-                if ($convertedPdfPath && file_exists($convertedPdfPath)) {
-                    // ganti file asli dengan versi PDF
-                    $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
-                    $newFilePath = 'letters/' . $pdfDescriptiveName;
-                    
-                    // simpan PDF yang udah dikonversi
-                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
-                    
-                    // hapus file PDF sementara
-                    unlink($convertedPdfPath);
-                    
-                    // hapus file Word asli
-                    Storage::delete($filePath);
-                    
-                    // update variabel buat pake versi PDF
-                    $filePath = $newFilePath;
-                    $fileExtension = 'pdf';
-                    $mimeType = 'application/pdf';
-                    $fileSize = Storage::size($filePath);
-                    
-                    \Log::info('Word document successfully converted to PDF using LibreOffice:', [
-                        'original_extension' => pathinfo($originalName, PATHINFO_EXTENSION),
-                        'new_file_path' => $filePath,
-                        'new_file_size' => $fileSize
-                    ]);
-                } else {
-                    \Log::error('Gagal konversi Word ke PDF pake LibreOffice, tetep pake file asli');
-                    // tetep pake file DOCX asli - nanti dihandle beda di preview
-                }
-            }
+            // Skip DOCX to PDF conversion at upload stage
+            // We'll process DOCX files at confirmation stage for better control
+            \Log::info('Keeping original file format for processing at confirmation stage:', [
+                'file_extension' => $fileExtension,
+                'original_name' => $originalName
+            ]);
 
             // cek duplicate nomor urut
             $user = Auth::user();
@@ -163,11 +132,11 @@ class SuratController extends Controller
             // ekstrak teks dari file buat detect nomor surat yang udah ada
             $extractedText = '';
             $extractionMethod = '';
-        $ocrError = null;
-        
-        // karena sekarang semua Word udah dikonversi ke PDF, cuma perlu handle PDF
+            $ocrError = null;
+            
+            // Handle different file types for text extraction
             if ($fileExtension === 'pdf') {
-        try {
+                try {
                     $extractionMethod = 'PDF Parser';
                     $parser = new Parser();
                     $fullPath = storage_path('app/' . $filePath);
@@ -186,8 +155,41 @@ class SuratController extends Controller
                     ]);
                 }
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                $extractionMethod = 'Word Parser (fallback)';
-                $extractedText = 'Word document processing - should have been converted to PDF.';
+                try {
+                    $extractionMethod = 'Word Parser';
+                    $fullPath = storage_path('app/' . $filePath);
+                    \Log::info('Extracting Word text from: ' . $fullPath);
+                    
+                    $phpWord = IOFactory::load($fullPath);
+                    $extractedText = '';
+                    
+                    // Extract text from all sections
+                    foreach ($phpWord->getSections() as $section) {
+                        // Extract from headers
+                        foreach ($section->getHeaders() as $header) {
+                            $extractedText .= $this->extractTextFromElement($header) . ' ';
+                        }
+                        
+                        // Extract from main content
+                        foreach ($section->getElements() as $element) {
+                            $extractedText .= $this->extractTextFromElement($element) . ' ';
+                        }
+                        
+                        // Extract from footers
+                        foreach ($section->getFooters() as $footer) {
+                            $extractedText .= $this->extractTextFromElement($footer) . ' ';
+                        }
+                    }
+                    
+                    \Log::info('Word text extracted successfully, length: ' . strlen($extractedText));
+                } catch (\Exception $e) {
+                    $ocrError = 'Error ekstraksi teks (Word Parser): ' . $e->getMessage();
+                    \Log::warning('Failed to extract text from Word: ' . $e->getMessage(), [
+                        'file_path' => $filePath,
+                        'full_path' => storage_path('app/' . $filePath),
+                        'exists' => file_exists(storage_path('app/' . $filePath))
+                    ]);
+                }
             }
 
             // cek apakah file udah ada nomor surat yang valid
@@ -1238,7 +1240,9 @@ class SuratController extends Controller
                 'perihal' => 'required|string|max:255',
                 'tanggal_surat' => 'required|date',
                 'tanggal_diterima' => 'nullable|date',
-                'is_private' => 'boolean'
+                'is_private' => 'boolean',
+                'selected_users' => 'array',
+                'selected_users.*' => 'exists:users,id'
             ]);
 
             $user = Auth::user();
@@ -1271,6 +1275,7 @@ class SuratController extends Controller
                 'tanggal_surat' => $request->tanggal_surat,
                 'tanggal_diterima' => $request->tanggal_diterima ?: date('Y-m-d'),
                 'is_private' => $request->has('is_private'),
+                'selected_users' => $request->selected_users ?? [],
                 'generated_at' => now()
             ];
             
@@ -1485,6 +1490,16 @@ class SuratController extends Controller
                 // Increment counter
                 $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
 
+                // Handle private surat access
+                if ($data['is_private'] && !empty($data['selected_users'])) {
+                    foreach ($data['selected_users'] as $userId) {
+                        SuratAccess::create([
+                            'surat_id' => $surat->id,
+                            'user_id' => $userId,
+                        ]);
+                    }
+                }
+
                 // Cleanup locks
                 NomorUrutLock::where('divisi_id', $data['divisi_id'])
                     ->where('jenis_surat_id', $data['jenis_surat_id'])
@@ -1502,14 +1517,14 @@ class SuratController extends Controller
                 if ($request->ajax()) {
                     return response()->json([
                         'success' => true,
-                        'redirect' => route('surat.manual.verification', [
+                        'redirect' => route('surat.manual.result', [
                             'status' => 'success',
                             'surat_id' => $surat->id
                         ])
                     ]);
                 }
 
-                return redirect()->route('surat.manual.verification', [
+                return redirect()->route('surat.manual.result', [
                     'status' => 'success',
                     'surat_id' => $surat->id
                 ]);
@@ -1533,11 +1548,11 @@ class SuratController extends Controller
                 if ($request->ajax()) {
                     return response()->json([
                         'success' => false,
-                        'redirect' => route('surat.manual.verification', ['status' => 'failed'])
+                        'redirect' => route('surat.manual.result', ['status' => 'failed'])
                     ]);
                 }
 
-                return redirect()->route('surat.manual.verification', ['status' => 'failed']);
+                return redirect()->route('surat.manual.result', ['status' => 'failed']);
             }
 
         } catch (\Exception $e) {
@@ -1620,7 +1635,7 @@ class SuratController extends Controller
                     ->withErrors(['error' => 'Data surat tidak ditemukan']);
             }
             
-            return view('surat.manual.verification', [
+            return view('surat.manual.result', [
                 'verification_success' => true,
                 'surat' => $surat
             ]);
@@ -1633,7 +1648,7 @@ class SuratController extends Controller
                     ->withErrors(['error' => 'Data verification tidak ditemukan']);
             }
             
-            return view('surat.manual.verification', [
+            return view('surat.manual.result', [
                 'verification_success' => false,
                 'failed_data' => $failedData
             ]);
@@ -1673,7 +1688,9 @@ class SuratController extends Controller
                 'perihal' => 'required|string|max:255',
                 'tanggal_surat' => 'required|date',
                 'tanggal_diterima' => 'nullable|date',
-                'is_private' => 'nullable|boolean'
+                'is_private' => 'nullable|boolean',
+                'selected_users' => 'array',
+                'selected_users.*' => 'exists:users,id'
             ]);
 
             // Reuse existing manual upload logic but with new data
@@ -1683,7 +1700,8 @@ class SuratController extends Controller
                 'perihal' => $request->perihal,
                 'tanggal_surat' => $request->tanggal_surat,
                 'tanggal_diterima' => $request->tanggal_diterima ?: now()->format('Y-m-d'),
-                'is_private' => $request->boolean('is_private')
+                'is_private' => $request->boolean('is_private'),
+                'selected_users' => $request->selected_users ?? []
             ];
 
             // Store in session and redirect to normal manual upload flow
@@ -1696,5 +1714,37 @@ class SuratController extends Controller
             \Log::error('Error manualReUpload: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Helper method to extract text from Word document elements
+     */
+    private function extractTextFromElement($element)
+    {
+        $text = '';
+        
+        if ($element instanceof \PhpOffice\PhpWord\Element\TextRun) {
+            foreach ($element->getElements() as $textElement) {
+                if ($textElement instanceof \PhpOffice\PhpWord\Element\Text) {
+                    $text .= $textElement->getText() . ' ';
+                }
+            }
+        } elseif ($element instanceof \PhpOffice\PhpWord\Element\Text) {
+            $text .= $element->getText() . ' ';
+        } elseif ($element instanceof \PhpOffice\PhpWord\Element\Table) {
+            foreach ($element->getRows() as $row) {
+                foreach ($row->getCells() as $cell) {
+                    foreach ($cell->getElements() as $cellElement) {
+                        $text .= $this->extractTextFromElement($cellElement) . ' ';
+                    }
+                }
+            }
+        } elseif (method_exists($element, 'getElements')) {
+            foreach ($element->getElements() as $subElement) {
+                $text .= $this->extractTextFromElement($subElement) . ' ';
+            }
+        }
+        
+        return $text;
     }
 }

@@ -13,7 +13,6 @@ Sistema pengelolaan surat berbasis Laravel dengan fitur counter otomatis per bul
 
 ### 🔢 Smart Counter System
 - **Multi-Month Support**: Counter independen untuk setiap bulan
-- **Auto-Reset**: Tidak perlu reset manual, setiap bulan otomatis mulai dari 1
 - **Historical Input**: Bisa input surat untuk bulan sebelumnya tanpa mengganggu counter bulan berjalan
 - **Format**: `001/DIVISI/JENIS/INTENS/MM/YYYY`
 
@@ -30,7 +29,6 @@ Sistema pengelolaan surat berbasis Laravel dengan fitur counter otomatis per bul
 ### 🔍 Advanced Search & Filter
 - Filter berdasarkan divisi, jenis surat, tanggal
 - Search dalam content surat
-- Export data ke berbagai format
 
 ## Installation
 
@@ -38,7 +36,7 @@ Sistema pengelolaan surat berbasis Laravel dengan fitur counter otomatis per bul
 - PHP 8.1+
 - Laravel 11
 - SQLite/MySQL/PostgreSQL
-- LibreOffice (untuk konversi Word ke PDF)
+- LibreOffice (Konversi Word ke PDF)
 - Composer
 
 ### Setup
@@ -98,7 +96,7 @@ Sistem counter baru mendukung input surat untuk berbagai bulan:
 
 ```php
 // Input surat bulan ini
-$jenisSurat->peekNextCounter(); // Auto menggunakan 2025-08
+$jenisSurat->peekNextCounter(); // Auto menggunakan tanggal saat ini
 
 // Input surat bulan lalu  
 $jenisSurat->peekNextCounter('2025-07'); // Counter Juli terpisah
@@ -109,34 +107,11 @@ $jenisSurat->peekNextCounter('2025-09'); // Counter September baru
 
 ### Automatic Flow
 1. **Upload**: User upload file surat
-2. **Extract**: Sistem ekstrak tanggal surat dari file
+2. **Extract**: Sistem ekstrak tanggal surat dari file (jika memungkinkan)
 3. **Counter**: Sistem ambil counter berdasarkan bulan dari tanggal surat
-4. **Preview**: User lihat preview dengan nomor yang akan digunakan
+4. **Preview**: User dapat melihat preview dengan nomor yang akan digunakan
 5. **Finalize**: Sistem increment counter dan simpan surat
 
-## Console Commands
-
-### Maintenance
-```bash
-# System maintenance (scheduled hourly)
-php artisan lms:maintenance
-
-# Force cleanup
-php artisan lms:cleanup --force
-
-# Check counter status
-php artisan surat:counter-status
-```
-
-### Scheduling
-Di `routes/console.php`:
-```php
-// Maintenance setiap jam
-Schedule::command('lms:maintenance')->hourly();
-
-// Deep cleanup harian jam 2 pagi
-Schedule::command('lms:cleanup --force')->dailyAt('02:00');
-```
 
 ## Usage Examples
 
@@ -188,29 +163,6 @@ $nextNumber = $this->getNextNomorUrut($divisiId, $jenisSuratId, $tanggalSurat);
 - Index pada `(jenis_surat_id, month_year)` untuk query cepat
 - Minimal database locks dengan transaction scope
 - Auto-cleanup expired locks untuk mencegah bloat
-
-## Troubleshooting
-
-### LibreOffice Issues
-```bash
-# Test LibreOffice conversion
-soffice --headless --convert-to pdf --outdir /tmp test.docx
-```
-
-### Counter Issues
-```bash
-# Check counter status
-php artisan surat:counter-status
-
-# Check database directly
-php artisan db:table counters
-```
-
-### Lock Issues
-```bash
-# Clean expired locks manually
-php artisan lms:cleanup --force
-```
 
 ## License
 

@@ -8,7 +8,7 @@
             
             <div class="alert alert-info">
                 <h6><i class="fas fa-info-circle"></i> Mode Manual</h6>
-                <p class="mb-0">Isi form dulu buat liat nomor surat, terus upload file yang udah ada nomornya.</p>
+                <p class="mb-0">Isi form terlebih dahulu untuk melihat nomor surat, terus upload file yang sudah memiliki nomor surat.</p>
             </div>
 
             @if($errors->any())
@@ -63,7 +63,7 @@
                                            value="{{ date('Y-m-d') }}" required>
                                 </div>
 
-                                <div class="mb-3">
+                                <div class="mb-3" style="display: none;">
                                     <label for="tanggal_diterima" class="form-label">Tanggal Diterima</label>
                                     <input type="date" class="form-control" id="tanggal_diterima" name="tanggal_diterima" 
                                            value="{{ date('Y-m-d') }}">
@@ -71,10 +71,46 @@
 
                                 <div class="mb-3">
                                     <div class="form-check">
-                                        <input type="checkbox" class="form-check-input" id="is_private" name="is_private" value="1">
+                                        <input type="checkbox" class="form-check-input" id="is_private" name="is_private" value="1" onchange="toggleUserSelection()">
                                         <label class="form-check-label" for="is_private">
                                             Surat Private
                                         </label>
+                                    </div>
+                                </div>
+
+                                <!-- User Selection for Private Access -->
+                                <div id="userSelectionSection" class="mb-3" style="display: none;">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">Pilih User yang Dapat Mengakses Surat Private</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label for="userSearch" class="form-label">Cari User:</label>
+                                                <input type="text" class="form-control" id="userSearch" placeholder="Ketik nama, username, atau email..." onkeyup="searchUsers()">
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <label class="form-label">Daftar User:</label>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllUsers()">Pilih Semua</button>
+                                                </div>
+                                                <div id="userList" class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                                                    <div class="text-center text-muted">
+                                                        <i class="fas fa-spinner fa-spin"></i> Loading users...
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="alert alert-info">
+                                                <small>
+                                                    <i class="fas fa-info-circle"></i>
+                                                    <strong>Info:</strong> User yang dipilih akan dapat mengakses surat private ini. 
+                                                    Admin dan Anda (pengupload) tidak perlu dipilih karena sudah otomatis memiliki akses.
+                                                    Jika tidak ada user yang dipilih, hanya Anda dan Admin yang dapat mengakses.
+                                                </small>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </form>
@@ -96,7 +132,7 @@
                                     <span class="text-muted">Lengkapi form untuk melihat nomor surat</span>
                                 </div>
                                 <div id="copySection" style="display: none;" class="text-center mt-2">
-                                    <button type="button" class="btn btn-sm btn-outline-success" onclick="copyNomorSurat()">
+                                    <button type="button" id="copyNomorBtn" class="btn btn-sm btn-outline-success">
                                         <i class="fas fa-copy"></i> Copy Nomor
                                     </button>
                                 </div>
@@ -175,6 +211,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastActivityTime = Date.now();
     let inactivityTimeout = null;
     let debounceTimer = null; // Add debounce timer
+    
+    // Setup copy button event listener
+    const copyNomorBtn = document.getElementById('copyNomorBtn');
+    if (copyNomorBtn) {
+        copyNomorBtn.addEventListener('click', function() {
+            copyNomorSurat();
+        });
+    }
     
     // ==========================================================================================
     
@@ -278,6 +322,15 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('tanggal_surat', tanggalSuratInput.value);
         formData.append('tanggal_diterima', document.getElementById('tanggal_diterima').value);
         formData.append('is_private', document.getElementById('is_private').checked ? '1' : '0');
+        
+        // Include selected users for private access
+        if (document.getElementById('is_private').checked) {
+            const selectedUsers = document.querySelectorAll('input[name="selected_users[]"]:checked');
+            selectedUsers.forEach(checkbox => {
+                formData.append('selected_users[]', checkbox.value);
+            });
+        }
+        
         formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
         
         fetch('{{ route("surat.manual.generate") }}', {
@@ -540,12 +593,15 @@ function copyNomorSurat() {
     // Clipboard
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(currentNomorSurat).then(function() {
-            const btn = event.target.closest('button');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-            setTimeout(() => {
-                btn.innerHTML = originalText;
-            }, 2000);
+            const btn = document.getElementById('copyNomorBtn');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                }, 2000);
+            }
+            console.log('Nomor surat copied successfully:', currentNomorSurat);
         }).catch(function(err) {
             console.error('Clipboard API failed:', err);
             fallbackCopyToClipboard(currentNomorSurat);
@@ -567,18 +623,99 @@ function fallbackCopyToClipboard(text) {
     
     try {
         document.execCommand('copy');
-        const btn = event.target.closest('button');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-        setTimeout(() => {
-            btn.innerHTML = originalText;
-        }, 2000);
+        document.body.removeChild(textArea);
+        console.log('Fallback copy success');
+        
+        // Update button
+        const btn = document.getElementById('copyNomorBtn');
+        if (btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 2000);
+        }
+        
     } catch (err) {
+        document.body.removeChild(textArea);
         console.error('Fallback copy failed:', err);
         alert('Copy gagal. Nomor surat: ' + text);
     }
-    
-    document.body.removeChild(textArea);
 }
+
+// ============================= USER SELECTION FUNCTIONS =============================
+
+let allUsers = [];
+let filteredUsers = [];
+
+function toggleUserSelection() {
+    const isPrivate = document.getElementById('is_private').checked;
+    const userSection = document.getElementById('userSelectionSection');
+    
+    if (isPrivate) {
+        userSection.style.display = 'block';
+        loadUsers();
+    } else {
+        userSection.style.display = 'none';
+    }
+}
+
+function loadUsers() {
+    fetch('{{ route("surat.getUsersForAccess") }}')
+        .then(response => response.json())
+        .then(users => {
+            allUsers = users;
+            filteredUsers = users;
+            renderUserList();
+        })
+        .catch(error => {
+            console.error('Error loading users:', error);
+            document.getElementById('userList').innerHTML = '<div class="text-center text-danger">Error loading users</div>';
+        });
+}
+
+function searchUsers() {
+    const searchTerm = document.getElementById('userSearch').value.toLowerCase();
+    filteredUsers = allUsers.filter(user => 
+        user.full_name.toLowerCase().includes(searchTerm) ||
+        user.username.toLowerCase().includes(searchTerm) ||
+        user.email.toLowerCase().includes(searchTerm)
+    );
+    renderUserList();
+}
+
+function renderUserList() {
+    const userList = document.getElementById('userList');
+    
+    if (filteredUsers.length === 0) {
+        userList.innerHTML = '<div class="text-center text-muted">Tidak ada user ditemukan</div>';
+        return;
+    }
+    
+    let html = '';
+    filteredUsers.forEach(user => {
+        html += `
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="selected_users[]" value="${user.id}" id="user_${user.id}">
+                <label class="form-check-label" for="user_${user.id}">
+                    <strong>${user.full_name}</strong><br>
+                    <small class="text-muted">${user.username} • ${user.email}</small>
+                </label>
+            </div>
+        `;
+    });
+    
+    userList.innerHTML = html;
+}
+
+function selectAllUsers() {
+    const checkboxes = document.querySelectorAll('input[name="selected_users[]"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = !allChecked;
+    });
+}
+
 </script>
 @endsection

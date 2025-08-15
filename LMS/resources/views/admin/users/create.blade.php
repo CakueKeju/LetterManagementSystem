@@ -10,9 +10,6 @@
                         <i class="fas fa-user-plus me-2"></i>
                         Tambah User Baru
                     </h4>
-                    <a href="{{ route('admin.users.index') }}" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left me-1"></i>Kembali
-                    </a>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ route('admin.users.store') }}">
