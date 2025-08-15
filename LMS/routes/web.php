@@ -299,7 +299,19 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // ================================= ADMIN SURAT ROUTES =================================
 
 Route::middleware(['auth', 'active', 'admin'])->group(function() {
-    Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'showUploadForm'])->name('admin.surat.upload');
+    // Mode selection for admin surat upload
+    Route::get('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'suratModeSelection'])->name('admin.surat.mode.selection');
+    
+    // Automatic mode routes
+    Route::get('/admin/surat/automatic/upload', [App\Http\Controllers\AdminController::class, 'automaticUploadForm'])->name('admin.surat.automatic.upload');
+    Route::post('/admin/surat/automatic/upload', [App\Http\Controllers\AdminController::class, 'automaticHandleUpload'])->name('admin.surat.automatic.handleUpload');
+    Route::post('/admin/surat/automatic/store', [App\Http\Controllers\AdminController::class, 'automaticStore'])->name('admin.surat.automatic.store');
+    
+    // Manual mode routes  
+    Route::get('/admin/surat/manual/form', [App\Http\Controllers\AdminController::class, 'manualForm'])->name('admin.surat.manual.form');
+    Route::post('/admin/surat/manual/upload', [App\Http\Controllers\AdminController::class, 'manualHandleUpload'])->name('admin.surat.manual.handleUpload');
+    
+    // Legacy routes (keep for backward compatibility)
     Route::post('/admin/surat/upload', [App\Http\Controllers\AdminController::class, 'handleUpload'])->name('admin.surat.handleUpload');
     Route::post('/admin/surat/store', [App\Http\Controllers\AdminController::class, 'store'])->name('admin.surat.store');
 });

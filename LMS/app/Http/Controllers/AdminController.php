@@ -441,6 +441,268 @@ class AdminController extends Controller
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload oleh admin!');
     }
 
+    // ==========================================================================================
+    // NEW ADMIN SURAT METHODS WITH MODE SELECTION
+    // ==========================================================================================
+
+    /**
+     * Show mode selection page for admin surat upload
+     */
+    public function suratModeSelection()
+    {
+        return view('admin.surat.mode_selection');
+    }
+
+    /**
+     * Show automatic upload form for admin
+     */
+    public function automaticUploadForm()
+    {
+        $divisions = Division::all();
+        return view('admin.surat.automatic.upload', compact('divisions'));
+    }
+
+    /**
+     * Handle automatic upload for admin
+     */
+    public function automaticHandleUpload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:pdf,doc,docx',
+            'divisi_id' => 'required|exists:divisions,id',
+            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+        ]);
+
+        $file = $request->file('file');
+        $originalName = $file->getClientOriginalName();
+        $fileSize = $file->getSize();
+        $mimeType = $file->getMimeType();
+        $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        
+        \Log::info('Admin automatic file upload started:', [
+            'original_name' => $originalName,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
+            'extension' => $fileExtension,
+            'divisi_id' => $request->divisi_id,
+            'jenis_surat_id' => $request->jenis_surat_id,
+        ]);
+        
+        // Store the uploaded file
+        $filePath = $file->store('temp_uploads', 'local');
+        \Log::info('Admin automatic file stored:', ['path' => $filePath]);
+        
+        // Extract text from document (OCR / document parsing)
+        $extractionResult = $this->extractTextFromDocument(storage_path('app/' . $filePath), $fileExtension);
+        $extractedText = $extractionResult['text'] ?? '';
+        $ocrError = $extractionResult['error'] ?? null;
+        
+        \Log::info('Admin automatic extraction result:', [
+            'text_length' => strlen($extractedText),
+            'has_error' => !empty($ocrError)
+        ]);
+        
+        // Extract relevant data fields from the document text
+        $extractedData = $this->extractSuratData($extractedText);
+        
+        // Merge dengan input form
+        $input = array_merge($extractedData, [
+            'divisi_id' => $request->divisi_id,
+            'jenis_surat_id' => $request->jenis_surat_id,
+        ]);
+        
+        \Log::info('Admin automatic final input data:', $input);
+        
+        // Get all divisions and jenis surat untuk dropdown
+        $divisions = Division::all();
+        $jenisSurat = JenisSurat::all();
+        
+        return view('admin.surat.automatic.preview', [
+            'file_path' => $filePath,
+            'file_size' => $fileSize,
+            'mime_type' => $mimeType,
+            'input' => $input,
+            'extracted_text' => $extractedText,
+            'ocr_error' => $ocrError,
+            'divisions' => $divisions,
+            'jenisSurat' => $jenisSurat,
+        ]);
+    }
+
+    /**
+     * Store automatic upload for admin
+     */
+    public function automaticStore(Request $request)
+    {
+        $validatedData = $request->validate([
+            'file_path' => 'required|string',
+            'file_size' => 'required|integer',
+            'mime_type' => 'required|string',
+            'nomor_surat' => 'required|string|unique:surat,nomor_surat',
+            'nomor_urut' => 'required|integer',
+            'divisi_id' => 'required|exists:divisions,id',
+            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+            'perihal' => 'required|string|max:255',
+            'tanggal_surat' => 'required|date',
+            'tanggal_diterima' => 'required|date',
+            'is_private' => 'boolean',
+            'selected_users' => 'array',
+            'selected_users.*' => 'exists:users,id',
+        ]);
+        
+        \Log::info('Admin automatic store started:', $validatedData);
+        
+        // Generate new file name with nomor surat
+        $tempFilePath = storage_path('app/' . $validatedData['file_path']);
+        $fileExtension = pathinfo($tempFilePath, PATHINFO_EXTENSION);
+        $newFileName = $validatedData['nomor_surat'] . '.' . $fileExtension;
+        $newFileName = str_replace(['/', '\\'], '_', $newFileName);
+        
+        // Process document with nomor surat - fill in the blanks
+        $processedFilePath = $this->processDocument(
+            $tempFilePath,
+            $validatedData['nomor_surat'],
+            $validatedData['divisi_id'],
+            $validatedData['jenis_surat_id'],
+            $validatedData['tanggal_surat']
+        );
+        
+        if (!$processedFilePath) {
+            \Log::error('Admin automatic document processing failed');
+            return back()->withErrors(['error' => 'Failed to process document with nomor surat']);
+        }
+        
+        // Move processed file to final location
+        $finalPath = 'surat_files/' . $newFileName;
+        Storage::disk('public')->put($finalPath, file_get_contents($processedFilePath));
+        
+        // Clean up temp files
+        Storage::disk('local')->delete($validatedData['file_path']);
+        if (file_exists($processedFilePath)) {
+            unlink($processedFilePath);
+        }
+        
+        // Create surat record
+        $surat = Surat::create([
+            'nomor_surat' => $validatedData['nomor_surat'],
+            'nomor_urut' => $validatedData['nomor_urut'],
+            'divisi_id' => $validatedData['divisi_id'],
+            'jenis_surat_id' => $validatedData['jenis_surat_id'],
+            'perihal' => $validatedData['perihal'],
+            'tanggal_surat' => $validatedData['tanggal_surat'],
+            'tanggal_diterima' => $validatedData['tanggal_diterima'],
+            'file_path' => $finalPath,
+            'file_size' => $validatedData['file_size'],
+            'mime_type' => $validatedData['mime_type'],
+            'uploaded_by' => Auth::id(),
+            'is_private' => $validatedData['is_private'] ?? false,
+        ]);
+        
+        // Handle private access if needed
+        if ($request->input('is_private') && $request->has('selected_users')) {
+            $selectedUsers = $request->input('selected_users', []);
+            foreach ($selectedUsers as $userId) {
+                \App\Models\SuratAccess::grantAccess($surat->id, $userId);
+            }
+        }
+        
+        \Log::info('Admin automatic surat created:', ['surat_id' => $surat->id]);
+        
+        return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload melalui mode otomatis!');
+    }
+
+    /**
+     * Show manual form for admin
+     */
+    public function manualForm()
+    {
+        $divisions = Division::all();
+        return view('admin.surat.manual.form', compact('divisions'));
+    }
+
+    /**
+     * Handle manual upload for admin
+     */
+    public function manualHandleUpload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:pdf,doc,docx',
+            'perihal' => 'required|string|max:255',
+            'divisi_id' => 'required|exists:divisions,id',
+            'jenis_surat_id' => 'required|exists:jenis_surat,id',
+            'tanggal_surat' => 'required|date',
+            'tanggal_diterima' => 'required|date',
+            'nomor_surat' => 'required|string',
+            'is_private' => 'boolean',
+            'selected_users' => 'array',
+            'selected_users.*' => 'exists:users,id',
+        ]);
+        
+        try {
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+            
+            // Generate new file name
+            $newFileName = $request->nomor_surat . '.' . $file->getClientOriginalExtension();
+            $newFileName = str_replace(['/', '\\'], '_', $newFileName);
+            
+            // Store file
+            $filePath = $file->storeAs('surat_files', $newFileName, 'public');
+            
+            // Extract nomor urut from nomor surat (first 3 digits)
+            $nomorUrut = (int) substr($request->nomor_surat, 0, 3);
+            
+            // Create surat record
+            $surat = Surat::create([
+                'nomor_surat' => $request->nomor_surat,
+                'nomor_urut' => $nomorUrut,
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'perihal' => $request->perihal,
+                'tanggal_surat' => $request->tanggal_surat,
+                'tanggal_diterima' => $request->tanggal_diterima,
+                'file_path' => $filePath,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
+                'uploaded_by' => Auth::id(),
+                'is_private' => $request->boolean('is_private'),
+            ]);
+            
+            // Handle private access if needed
+            if ($request->boolean('is_private') && $request->has('selected_users')) {
+                $selectedUsers = $request->input('selected_users', []);
+                foreach ($selectedUsers as $userId) {
+                    \App\Models\SuratAccess::grantAccess($surat->id, $userId);
+                }
+            }
+            
+            \Log::info('Admin manual surat created:', [
+                'surat_id' => $surat->id,
+                'nomor_surat' => $request->nomor_surat,
+                'perihal' => $request->perihal
+            ]);
+            
+            return view('admin.surat.manual.result', [
+                'success' => true,
+                'surat' => $surat
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Admin manual upload failed:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return view('admin.surat.manual.result', [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'details' => 'Please check the logs for more information'
+            ]);
+        }
+    }
+
     /**
      * Show all users
      */
@@ -737,5 +999,242 @@ class AdminController extends Controller
         $jenisSurat->delete();
 
         return redirect()->route('admin.jenis-surat.index')->with('success', 'Jenis surat berhasil dihapus!');
+    }
+
+    // ========== HELPER METHODS FROM SURATCONTROLLER ==========
+    
+    /**
+     * Extract text from document (PDF, DOC, DOCX)
+     */
+    private function extractTextFromDocument($filePath, $fileExtension)
+    {
+        $extractedText = '';
+        $extractionMethod = '';
+        $ocrError = null;
+        
+        // Handle different file types for text extraction
+        if ($fileExtension === 'pdf') {
+            try {
+                $extractionMethod = 'PDF Parser';
+                $parser = new \Smalot\PdfParser\Parser();
+                \Log::info('Admin: Extracting PDF text from: ' . $filePath);
+                $pdf = $parser->parseFile($filePath);
+                foreach ($pdf->getPages() as $page) {
+                    $extractedText .= $page->getText() . ' ';
+                }
+                \Log::info('Admin: PDF text extracted successfully, length: ' . strlen($extractedText));
+            } catch (\Exception $e) {
+                $ocrError = 'Error ekstraksi teks (PDF Parser): ' . $e->getMessage();
+                \Log::warning('Admin: Failed to extract text from PDF: ' . $e->getMessage(), [
+                    'file_path' => $filePath,
+                    'exists' => file_exists($filePath)
+                ]);
+            }
+        } elseif (in_array($fileExtension, ['doc', 'docx'])) {
+            try {
+                $extractionMethod = 'Word Parser';
+                \Log::info('Admin: Extracting Word text from: ' . $filePath);
+                
+                $phpWord = \PhpOffice\PhpWord\IOFactory::load($filePath);
+                $extractedText = '';
+                
+                // Extract text from all sections
+                foreach ($phpWord->getSections() as $section) {
+                    // Extract from headers
+                    foreach ($section->getHeaders() as $header) {
+                        $extractedText .= $this->extractTextFromElement($header) . ' ';
+                    }
+                    
+                    // Extract from main content
+                    foreach ($section->getElements() as $element) {
+                        $extractedText .= $this->extractTextFromElement($element) . ' ';
+                    }
+                    
+                    // Extract from footers
+                    foreach ($section->getFooters() as $footer) {
+                        $extractedText .= $this->extractTextFromElement($footer) . ' ';
+                    }
+                }
+                
+                \Log::info('Admin: Word text extracted successfully, length: ' . strlen($extractedText));
+            } catch (\Exception $e) {
+                $ocrError = 'Error ekstraksi teks (Word Parser): ' . $e->getMessage();
+                \Log::warning('Admin: Failed to extract text from Word: ' . $e->getMessage(), [
+                    'file_path' => $filePath,
+                    'exists' => file_exists($filePath)
+                ]);
+            }
+        }
+
+        return [
+            'text' => $extractedText,
+            'method' => $extractionMethod,
+            'error' => $ocrError
+        ];
+    }
+
+    /**
+     * Extract text from PhpWord elements recursively
+     */
+    private function extractTextFromElement($element)
+    {
+        $text = '';
+        
+        if ($element instanceof \PhpOffice\PhpWord\Element\TextRun) {
+            foreach ($element->getElements() as $textElement) {
+                if ($textElement instanceof \PhpOffice\PhpWord\Element\Text) {
+                    $text .= $textElement->getText() . ' ';
+                }
+            }
+        } elseif ($element instanceof \PhpOffice\PhpWord\Element\Text) {
+            $text .= $element->getText() . ' ';
+        } elseif ($element instanceof \PhpOffice\PhpWord\Element\Table) {
+            foreach ($element->getRows() as $row) {
+                foreach ($row->getCells() as $cell) {
+                    foreach ($cell->getElements() as $cellElement) {
+                        $text .= $this->extractTextFromElement($cellElement) . ' ';
+                    }
+                }
+            }
+        } elseif (method_exists($element, 'getElements')) {
+            foreach ($element->getElements() as $subElement) {
+                $text .= $this->extractTextFromElement($subElement) . ' ';
+            }
+        }
+        
+        return $text;
+    }
+
+    /**
+     * Extract surat data from document text
+     */
+    private function extractSuratData($extractedText)
+    {
+        $data = [
+            'nomor_urut' => null,
+            'divisi_id' => null,
+            'jenis_surat_id' => null,
+            'perihal' => '',
+            'tanggal_surat' => date('Y-m-d'),
+            'tanggal_diterima' => date('Y-m-d'),
+            'is_private' => false,
+            'has_valid_nomor' => false,
+        ];
+
+        if ($extractedText) {
+            \Log::info('Admin: Extracted text for surat:', ['text' => substr($extractedText, 0, 500)]);
+        }
+        
+        // Try to extract nomor_urut and other data from extracted text
+        if ($extractedText) {
+            // Normalize text: remove double slashes, extra spaces
+            $normalizedText = preg_replace('/\/\/+/', '/', $extractedText);
+            $normalizedText = preg_replace('/\s+/', ' ', $normalizedText);
+
+            // Check if file already has valid nomor surat format
+            if (preg_match('/Nomor:\s*(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
+                $data['nomor_urut'] = trim($matches[1]);
+                $divisiId = $this->findDivisiByKode(trim($matches[2]));
+                $jenisId = $this->findJenisSuratByKode(trim($matches[3]));
+                $data['divisi_id'] = $divisiId ?: null;
+                $data['jenis_surat_id'] = $jenisId ?: null;
+                $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
+                $data['has_valid_nomor'] = true;
+            }
+            // Alternative pattern: "123/ABC/DEF/INTENS/2023" (without "Nomor:")
+            elseif (preg_match('/(\d+)\/([^\/\n]+)\/([^\/\n]+)\/INTENS\/?\/?(\d{4})/i', $normalizedText, $matches)) {
+                $data['nomor_urut'] = trim($matches[1]);
+                $divisiId = $this->findDivisiByKode(trim($matches[2]));
+                $jenisId = $this->findJenisSuratByKode(trim($matches[3]));
+                $data['divisi_id'] = $divisiId ?: null;
+                $data['jenis_surat_id'] = $jenisId ?: null;
+                $data['tanggal_surat'] = $this->extractDateFromText($normalizedText);
+                $data['has_valid_nomor'] = true;
+            }
+            // Check for placeholder patterns (file belum diisi)
+            elseif (preg_match('/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\.\/\.\.\.\.\./i', $normalizedText) ||
+                    preg_match('/_____\/_____\/_____\/_____\/_____\/_____/i', $normalizedText) ||
+                    preg_match('/-----\/-----\/-----\/-----\/-----\/-----/i', $normalizedText)) {
+                $data['has_valid_nomor'] = false;
+            }
+            // Simple number pattern if no structured format found
+            if (!$data['nomor_urut'] && preg_match('/(\d+)/', $normalizedText, $matches)) {
+                $data['nomor_urut'] = $matches[1];
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Helper methods for extractSuratData
+     */
+    private function findDivisiByKode($kode)
+    {
+        $division = Division::where('kode_divisi', $kode)->first();
+        return $division ? $division->id : null;
+    }
+
+    private function findJenisSuratByKode($kode)
+    {
+        $jenisSurat = JenisSurat::where('kode_jenis', $kode)->first();
+        return $jenisSurat ? $jenisSurat->id : null;
+    }
+
+    private function extractDateFromText($text)
+    {
+        // Try to extract date from text
+        if (preg_match('/(\d{1,2})[\s\-\/](\d{1,2})[\s\-\/](\d{4})/', $text, $matches)) {
+            return $matches[3] . '-' . str_pad($matches[2], 2, '0', STR_PAD_LEFT) . '-' . str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+        }
+        return date('Y-m-d');
+    }
+
+    /**
+     * Process document with nomor surat - fill in the blanks
+     */
+    private function processDocument($filePath, $nomorSurat, $divisiId, $jenisSuratId, $tanggalSurat)
+    {
+        try {
+            $fileExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            
+            \Log::info('Admin: Processing document:', [
+                'file_path' => $filePath,
+                'nomor_surat' => $nomorSurat,
+                'extension' => $fileExtension
+            ]);
+            
+            $processedFilePath = null;
+            
+            if ($fileExtension === 'pdf') {
+                // Fill PDF with nomor surat
+                $processedFilePath = $this->fillPdfWithNomorSurat($filePath, $nomorSurat);
+            } elseif (in_array($fileExtension, ['doc', 'docx'])) {
+                // Fill Word document and convert to PDF
+                $processedFilePath = $this->fillWordWithNomorSuratAndConvertToPdf($filePath, $nomorSurat);
+            }
+            
+            if ($processedFilePath && file_exists($processedFilePath)) {
+                \Log::info('Admin: Document processed successfully:', [
+                    'original_path' => $filePath,
+                    'processed_path' => $processedFilePath
+                ]);
+                return $processedFilePath;
+            } else {
+                \Log::warning('Admin: Document processing failed, using original file:', [
+                    'file_path' => $filePath,
+                    'processed_path' => $processedFilePath
+                ]);
+                // Return original file if processing failed
+                return $filePath;
+            }
+        } catch (\Exception $e) {
+            \Log::error('Admin: Document processing error:', [
+                'file_path' => $filePath,
+                'error' => $e->getMessage()
+            ]);
+            // Return original file if processing failed
+            return $filePath;
+        }
     }
 } 

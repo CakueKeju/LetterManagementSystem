@@ -56,7 +56,7 @@
                         <i class="fas fa-tachometer-alt me-2"></i>
                         Admin Dashboard
                     </h4>
-                    <a href="{{ route('admin.surat.upload') }}" class="btn btn-success ms-2">
+                    <a href="{{ route('admin.surat.mode.selection') }}" class="btn btn-success ms-2">
                         <i class="fas fa-plus"></i> Upload Surat
                     </a>
                 </div>
