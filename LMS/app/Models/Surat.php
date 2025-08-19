@@ -63,6 +63,11 @@ class Surat extends Model
         return $this->hasMany(SuratAccess::class, 'surat_id');
     }
 
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class, 'surat_id');
+    }
+
     /**
      * Get nomor surat with Roman numeral month display
      * 

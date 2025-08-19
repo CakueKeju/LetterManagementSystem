@@ -18,6 +18,7 @@ use PhpOffice\PhpWord\TemplateProcessor;
 use setasign\Fpdi\Fpdi;
 use App\Traits\DocumentProcessor;
 use App\Traits\RomanNumeralConverter;
+use App\Services\NotificationService;
 
 class SuratController extends Controller
 {
@@ -502,6 +503,10 @@ class SuratController extends Controller
                 }
             }
 
+            // Create notifications for the new letter
+            $notificationService = new NotificationService();
+            $notificationService->notifyNewLetter($surat);
+
             \Log::info('finalStore about to redirect to home with success message', [
                 'surat_id' => $surat->id,
                 'nomor_surat' => $nomorSurat
@@ -595,6 +600,10 @@ class SuratController extends Controller
             if ($expiredCleaned > 0) {
                 \Log::info("Cleaned up {$expiredCleaned} expired locks during storeFromPreview");
             }
+
+            // Create notifications for the new letter
+            $notificationService = new NotificationService();
+            $notificationService->notifyNewLetter($surat);
 
             return redirect()->route('home')->with('success', 'Surat berhasil disimpan dengan nomor: ' . $nomorSurat);
 
@@ -1506,6 +1515,10 @@ class SuratController extends Controller
                     ->where('nomor_urut', $data['nomor_urut'])
                     ->where('user_id', Auth::id())
                     ->delete();
+
+                // Create notifications for the new letter
+                $notificationService = new NotificationService();
+                $notificationService->notifyNewLetter($surat);
 
                 // Clear session
                 session()->forget('manual_surat_data');

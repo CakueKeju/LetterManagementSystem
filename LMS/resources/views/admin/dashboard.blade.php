@@ -179,11 +179,11 @@
                                                             <div class="d-flex gap-1 action-buttons">
                                                                 <a href="{{ route('surat.file', $surat->id) }}" target="_blank" 
                                                                    class="btn btn-sm btn-outline-primary" title="Lihat Surat">
-                                                                    &#128065;
+                                                                    <i class="fas fa-eye"></i>
                                                                 </a>
                                                                 <a href="{{ route('surat.download', $surat->id) }}" 
                                                                    class="btn btn-sm btn-outline-success" title="Download Surat">
-                                                                    &#8595;
+                                                                    <i class="fas fa-download"></i>
                                                                 </a>
                                                             </div>
                                                         </td>

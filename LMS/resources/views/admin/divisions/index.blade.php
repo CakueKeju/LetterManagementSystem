@@ -114,19 +114,19 @@
                                             <div class="d-flex gap-1 action-buttons">
                                                 <a href="{{ route('admin.divisions.edit', $division->id) }}" 
                                                    class="btn btn-sm btn-outline-warning" title="Edit Divisi">
-                                                    &#9998;
+                                                    <i class="fas fa-edit"></i>
                                                 </a>
                                                 @if($division->users_count == 0 && ($division->surat_count ?? 0) == 0)
                                                     <form method="POST" action="{{ route('admin.divisions.destroy', $division->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus divisi ini?')">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Divisi">
-                                                            &#128465;
+                                                            <i class="fas fa-trash"></i>
                                                         </button>
                                                     </form>
                                                 @else
                                                     <button type="button" class="btn btn-sm btn-outline-danger" disabled title="Tidak dapat dihapus karena masih memiliki users atau surat">
-                                                        &#128465;
+                                                        <i class="fas fa-trash"></i>
                                                     </button>
                                                 @endif
                                             </div>

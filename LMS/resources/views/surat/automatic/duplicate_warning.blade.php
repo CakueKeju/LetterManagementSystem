@@ -50,7 +50,9 @@
                 <div class="card-body">
                     <h6>Opsi 1: Upload Ulang dengan Nomor yang Benar</h6>
                     <p>Upload ulang dokumen dengan nomor urut yang tersedia di atas.</p>
-                    <a href="{{ route('surat.upload') }}" class="btn btn-primary">Upload Ulang</a>
+                    <a href="{{ route('surat.upload') }}" class="btn btn-primary">
+                        <i class="fas fa-upload me-2"></i>Upload Ulang
+                    </a>
                 </div>
             </div>
         </div>
@@ -68,7 +70,9 @@
                                 @endforeach
                             </select>
                         </div>
-                        <button type="submit" class="btn btn-success">Lanjutkan dengan Nomor Ini</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-arrow-right me-2"></i>Lanjutkan dengan Nomor Ini
+                        </button>
                         <input type="hidden" name="file_path" value="{{ $file_path ?? '' }}">
                         <input type="hidden" name="file_size" value="{{ $file_size ?? '' }}">
                         <input type="hidden" name="mime_type" value="{{ $mime_type ?? '' }}">

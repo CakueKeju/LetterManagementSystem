@@ -181,21 +181,21 @@
                                             <div class="d-flex gap-1 action-buttons">
                                                 <a href="{{ route('surat.file', $s->id) }}" target="_blank" 
                                                    class="btn btn-sm btn-outline-primary" title="Lihat Surat">
-                                                    &#128065;
+                                                    <i class="fas fa-eye"></i>
                                                 </a>
                                                 <a href="{{ route('surat.download', $s->id) }}" 
                                                    class="btn btn-sm btn-outline-success" title="Download Surat">
-                                                    &#8595;
+                                                    <i class="fas fa-download"></i>
                                                 </a>
                                                 <a href="{{ route('admin.surat.edit', $s->id) }}" 
                                                    class="btn btn-sm btn-outline-warning" title="Edit Surat">
-                                                    &#9998;
+                                                    <i class="fas fa-edit"></i>
                                                 </a>
                                                 <form method="POST" action="{{ route('admin.surat.destroy', $s->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus surat ini?')">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Surat">
-                                                        &#128465;
+                                                        <i class="fas fa-trash"></i>
                                                     </button>
                                                 </form>
                                             </div>

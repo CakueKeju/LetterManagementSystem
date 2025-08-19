@@ -78,7 +78,7 @@
                             
                             <div class="mt-auto">
                                 <a href="{{ route('surat.manual.form') }}" class="btn btn-success btn-lg w-100">
-                                    <i class="fas fa-bolt me-2"></i>Pilih Mode Manual
+                                    <i class="fas fa-edit me-2"></i>Pilih Mode Manual
                                 </a>
                             </div>
                         </div>

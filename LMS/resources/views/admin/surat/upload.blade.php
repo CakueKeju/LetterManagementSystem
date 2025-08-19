@@ -46,7 +46,9 @@
                 • <strong>Word (DOC/DOCX):</strong> Isi nomor surat otomatis pada placeholder<br>
             </div>
         </div>
-        <button type="submit" class="btn btn-primary">Upload & Lanjutkan</button>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-upload me-2"></i>Upload
+        </button>
     </form>
 </div>
 

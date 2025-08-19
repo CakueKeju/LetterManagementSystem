@@ -161,7 +161,7 @@
 
                                     <div class="d-grid">
                                         <button type="button" id="uploadBtn" class="btn btn-primary" disabled>
-                                            <i class="fas fa-upload"></i> Upload & Verifikasi
+                                            <i class="fas fa-upload me-2"></i>Upload
                                         </button>
                                     </div>
                                 </form>
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
         
         uploadBtn.disabled = true;
-        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
         
         fetch('{{ route("surat.manual.handleUpload") }}', {
             method: 'POST',
@@ -561,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 verificationResult.style.display = 'block';
                 
                 uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Verifikasi';
+                uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload';
             }
         })
         .catch(error => {
@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', function() {
             verificationResult.style.display = 'block';
             
             uploadBtn.disabled = false;
-            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Verifikasi';
+            uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload';
         });
     });
     

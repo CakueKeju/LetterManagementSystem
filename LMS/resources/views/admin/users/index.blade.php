@@ -145,14 +145,14 @@
                                             <div class="d-flex gap-1 action-buttons">
                                                 <a href="{{ route('admin.users.edit', $user->id) }}" 
                                                    class="btn btn-sm btn-outline-warning" title="Edit User">
-                                                    &#9998;
+                                                    <i class="fas fa-edit"></i>
                                                 </a>
                                                 @if($user->id !== Auth::id())
                                                     <form method="POST" action="{{ route('admin.users.destroy', $user->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus user ini?')">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus User">
-                                                            &#128465;
+                                                            <i class="fas fa-trash"></i>
                                                         </button>
                                                     </form>
                                                 @endif

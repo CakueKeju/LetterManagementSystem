@@ -166,7 +166,7 @@
 
                                     <div class="d-grid">
                                         <button type="button" id="uploadBtn" class="btn btn-primary" disabled>
-                                            <i class="fas fa-upload"></i> Upload & Verifikasi
+                                            <i class="fas fa-upload me-2"></i>Upload
                                         </button>
                                     </div>
                                 </form>
@@ -591,7 +591,7 @@ function submitUpload() {
     // Show loading
     const uploadBtn = document.getElementById('uploadBtn');
     const originalText = uploadBtn.innerHTML;
-    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
     uploadBtn.disabled = true;
     
     console.log('Admin manual: Uploading file...', {

@@ -53,10 +53,10 @@
         
         <div class="d-flex justify-content-between">
             <a href="{{ route('admin.surat.mode.selection') }}" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Kembali
+                <i class="fas fa-arrow-left me-2"></i>Kembali
             </a>
             <button type="submit" class="btn btn-primary">
-                <i class="fas fa-upload"></i> Upload & Lanjutkan
+                <i class="fas fa-upload me-2"></i>Upload
             </button>
         </div>
     </form>

@@ -120,19 +120,19 @@
                                             <div class="d-flex gap-1 action-buttons">
                                                 <a href="{{ route('admin.jenis-surat.edit', $jenis->id) }}" 
                                                    class="btn btn-sm btn-outline-warning" title="Edit Jenis Surat">
-                                                    &#9998;
+                                                    <i class="fas fa-edit"></i>
                                                 </a>
                                                 @if($jenis->surat_count == 0)
                                                     <form method="POST" action="{{ route('admin.jenis-surat.destroy', $jenis->id) }}" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus jenis surat ini?')">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Jenis Surat">
-                                                            &#128465;
+                                                            <i class="fas fa-trash"></i>
                                                         </button>
                                                     </form>
                                                 @else
                                                     <button type="button" class="btn btn-sm btn-outline-danger" disabled title="Tidak dapat dihapus karena masih digunakan">
-                                                        &#128465;
+                                                        <i class="fas fa-trash"></i>
                                                     </button>
                                                 @endif
                                             </div>

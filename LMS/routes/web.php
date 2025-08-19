@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SuratController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\NotificationController;
 use Illuminate\Http\Request;
 
 Route::get('/', function () {
@@ -294,6 +295,24 @@ Route::prefix('admin')->name('admin.')->group(function () {
     // reset counter untuk testing
     Route::post('/jenis-surat/{id}/reset-counter', [AdminController::class, 'resetJenisSuratCounter'])->name('jenis-surat.reset-counter');
     Route::post('/jenis-surat/reset-all-counters', [AdminController::class, 'resetAllCounters'])->name('jenis-surat.reset-all-counters');
+});
+
+// ================================= NOTIFICATION ROUTES =================================
+
+Route::middleware(['auth', 'active'])->group(function() {
+    // Notification page
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/test', function() { return view('notifications.test'); })->name('notifications.test');
+    
+    // Notification API endpoints
+    Route::get('/api/notifications', [NotificationController::class, 'getData'])->name('notifications.data');
+    Route::get('/api/notifications/recent', [NotificationController::class, 'getRecent'])->name('notifications.recent');
+    Route::get('/api/notifications/unread-count', [NotificationController::class, 'getUnreadCount'])->name('notifications.unread-count');
+    Route::post('/api/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/api/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    
+    // Admin only
+    Route::post('/api/notifications/cleanup', [NotificationController::class, 'cleanup'])->name('notifications.cleanup')->middleware('admin');
 });
 
 // ================================= ADMIN SURAT ROUTES =================================

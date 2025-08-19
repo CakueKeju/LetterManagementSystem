@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\SuratAccess;
 use App\Traits\DocumentProcessor;
 use App\Traits\RomanNumeralConverter;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -438,6 +439,11 @@ class AdminController extends Controller
                 \App\Models\SuratAccess::grantAccess($surat->id, $userId);
             }
         }
+        
+        // Create notifications for the new letter
+        $notificationService = new NotificationService();
+        $notificationService->notifyNewLetter($surat);
+        
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload oleh admin!');
     }
 
@@ -606,6 +612,10 @@ class AdminController extends Controller
             }
         }
         
+        // Create notifications for the new letter
+        $notificationService = new NotificationService();
+        $notificationService->notifyNewLetter($surat);
+        
         \Log::info('Admin automatic surat created:', ['surat_id' => $surat->id]);
         
         return redirect()->route('admin.surat.index')->with('success', 'Surat berhasil diupload melalui mode otomatis!');
@@ -677,6 +687,10 @@ class AdminController extends Controller
                     \App\Models\SuratAccess::grantAccess($surat->id, $userId);
                 }
             }
+            
+            // Create notifications for the new letter
+            $notificationService = new NotificationService();
+            $notificationService->notifyNewLetter($surat);
             
             \Log::info('Admin manual surat created:', [
                 'surat_id' => $surat->id,
