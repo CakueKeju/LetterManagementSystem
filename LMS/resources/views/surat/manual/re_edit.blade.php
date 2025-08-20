@@ -206,9 +206,8 @@
 </div>
 
 <script>
-// =================================
+// =============================================================================================
 // PREVIEW NOMOR SURAT
-// =================================
 
 // konversi bulan ke romawi
 function monthToRoman(month) {
@@ -343,7 +342,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// ============================= USER SELECTION FUNCTIONS =============================
+// =============================================================================================
+// USER SELECTION FUNCTIONS 
 
 let allUsers = [];
 let filteredUsers = [];

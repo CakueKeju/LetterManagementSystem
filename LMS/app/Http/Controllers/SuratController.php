@@ -91,7 +91,6 @@ class SuratController extends Controller
                 'file_size' => Storage::size($filePath)
             ]);
 
-            // Skip DOCX to PDF conversion at upload stage
             // We'll process DOCX files at confirmation stage for better control
             \Log::info('Keeping original file format for processing at confirmation stage:', [
                 'file_extension' => $fileExtension,
