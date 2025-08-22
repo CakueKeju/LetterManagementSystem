@@ -79,7 +79,7 @@
         </tbody>
     </table>
     <div>
-        {{ $letters->withQueryString()->links() }}
+        {{ $letters->withQueryString()->links('pagination::bootstrap-5') }}
     </div>
 </div>
 @endsection 

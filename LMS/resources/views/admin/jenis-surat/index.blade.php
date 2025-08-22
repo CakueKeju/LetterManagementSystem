@@ -145,7 +145,7 @@
 
                         <!-- Pagination -->
                         <div class="d-flex justify-content-center">
-                            {{ $jenisSurat->links() }}
+                            {{ $jenisSurat->links('pagination::bootstrap-5') }}
                         </div>
                     @else
                         <div class="text-center py-4">

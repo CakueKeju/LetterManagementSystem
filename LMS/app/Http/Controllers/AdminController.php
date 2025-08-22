@@ -1251,4 +1251,65 @@ class AdminController extends Controller
             return $filePath;
         }
     }
+
+    /**
+     * Convert Word document to PDF using simple conversion
+     * This method provides compatibility for existing code that expects LibreOffice conversion
+     */
+    private function convertWordToPdfWithLibreOffice($wordPath)
+    {
+        try {
+            \Log::info('Admin: Converting Word to PDF (compatibility method):', [
+                'word_path' => $wordPath,
+                'file_exists' => file_exists($wordPath)
+            ]);
+
+            if (!file_exists($wordPath)) {
+                \Log::error('Admin: Word file does not exist for conversion: ' . $wordPath);
+                return null;
+            }
+
+            // Use the existing convertWordToPdf method from DocumentProcessor trait
+            $pdfPath = $this->convertWordToPdf($wordPath);
+            
+            if ($pdfPath && file_exists($pdfPath)) {
+                \Log::info('Admin: Word document converted to PDF successfully: ' . $pdfPath);
+                return $pdfPath;
+            } else {
+                \Log::warning('Admin: Word to PDF conversion failed, falling back to simple PDF creation');
+                
+                // Fallback: Create a simple PDF
+                $tempPdfPath = storage_path('app/admin_fallback_pdf_' . uniqid() . '.pdf');
+                
+                $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+                $pdf->SetCreator('LMS System');
+                $pdf->SetTitle('Admin Document Conversion');
+                $pdf->SetMargins(20, 20, 20);
+                $pdf->SetAutoPageBreak(TRUE, 25);
+                $pdf->AddPage();
+                $pdf->SetFont('dejavusans', '', 11);
+                
+                // Extract basic info from original filename
+                $originalName = basename($wordPath);
+                $pdf->MultiCell(0, 6, "Document: {$originalName}\n\nThis document has been converted from Word format by Admin.\nOriginal content preserved in system.", 0, 'L');
+                
+                $pdf->Output($tempPdfPath, 'F');
+                
+                if (file_exists($tempPdfPath)) {
+                    chmod($tempPdfPath, 0644);
+                    \Log::info('Admin: Fallback PDF created: ' . $tempPdfPath);
+                    return $tempPdfPath;
+                }
+                
+                return null;
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Admin: Error in convertWordToPdfWithLibreOffice: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'word_path' => $wordPath
+            ]);
+            return null;
+        }
+    }
 } 

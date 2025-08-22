@@ -46,6 +46,7 @@ class JenisSuratCounter extends Model
     }
 
     // increment counter untuk bulan tertentu dan return nilai baru
+    // Counter menyimpan "nomor terakhir yang sudah digunakan", bukan "nomor berikutnya"
     // fungsi ini juga sync dengan data surat untuk prevent inconsistency
     public static function incrementForMonth($jenisSuratId, $monthYear)
     {
@@ -55,7 +56,7 @@ class JenisSuratCounter extends Model
                 ->where('month_year', $monthYear)
                 ->first();
 
-            // cek nomor urut max dari tabel surat  
+            // cek nomor urut max dari tabel surat (nomor terakhir yang benar-benar digunakan)
             [$year, $month] = explode('-', $monthYear);
             $maxNomorUrut = \App\Models\Surat::where('jenis_surat_id', $jenisSuratId)
                 ->whereYear('tanggal_surat', $year)
@@ -63,32 +64,34 @@ class JenisSuratCounter extends Model
                 ->max('nomor_urut');
 
             if (!$counter) {
-                // Create new counter, sync with actual max nomor_urut
-                $newCounterValue = max(1, ($maxNomorUrut ?: 0) + 1);
+                // Create new counter, set to the number we're about to use
+                $nextNumber = ($maxNomorUrut ?: 0) + 1;
                 $counter = static::create([
                     'jenis_surat_id' => $jenisSuratId,
                     'month_year' => $monthYear,
-                    'counter' => $newCounterValue
+                    'counter' => $nextNumber  // Store the number we're using
                 ]);
                 
-                \Log::info("Created new counter for JenisSurat {$jenisSuratId} month {$monthYear}: {$newCounterValue}");
-                return $newCounterValue;
+                \Log::info("Created new counter for JenisSurat {$jenisSuratId} month {$monthYear}: using {$nextNumber}");
+                return $nextNumber;
             }
 
-            // Use the higher value between counter table and actual max nomor_urut
-            $syncedValue = max($counter->counter, $maxNomorUrut ?: 0);
-            $newCounter = $syncedValue + 1;
+            // Determine the actual last used number from reliable sources
+            $actualLastUsed = max($counter->counter, $maxNomorUrut ?: 0);
+            $nextNumber = $actualLastUsed + 1;
             
-            $counter->update(['counter' => $newCounter]);
+            // Update counter to store the number we're about to use
+            $counter->update(['counter' => $nextNumber]);
             
             \Log::info("Incremented counter for JenisSurat {$jenisSuratId} month {$monthYear}:", [
                 'old_counter' => $counter->counter,
                 'actual_max_nomor_urut' => $maxNomorUrut,
-                'synced_value' => $syncedValue,
-                'new_counter' => $newCounter
+                'actual_last_used' => $actualLastUsed,
+                'next_number_to_use' => $nextNumber,
+                'counter_updated_to' => $nextNumber
             ]);
             
-            return $newCounter;
+            return $nextNumber;
         });
     }
 

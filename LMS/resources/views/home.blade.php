@@ -161,8 +161,10 @@
             </tbody>
         </table>
     </div>
-    <div class="d-flex justify-content-center">
-        {{ $letters->withQueryString()->links() }}
+    
+    <!-- Pagination -->
+    <div class="d-flex justify-content-center mt-4">
+        {{ $letters->withQueryString()->links('pagination::bootstrap-5') }}
     </div>
 </div>
 @endsection

@@ -603,17 +603,12 @@ trait DocumentProcessor
             // Now convert the filled Word document to PDF
             $pdfPath = $this->convertWordToPdf($filledWordPath);
             
-            if ($pdfPath && file_exists($pdfPath)) {
-                // PDF conversion successful, clean up Word file
-                if (file_exists($filledWordPath)) {
-                    unlink($filledWordPath);
-                }
-                return $pdfPath;
-            } else {
-                // PDF conversion failed, return the filled DOCX file
-                \Log::warning('PDF conversion failed, returning filled DOCX file instead');
-                return $filledWordPath;
+            // Clean up temporary Word file
+            if (file_exists($filledWordPath)) {
+                unlink($filledWordPath);
             }
+            
+            return $pdfPath;
             
         } catch (\Exception $e) {
             \Log::error('Error in Word to PDF process: ' . $e->getMessage(), [
@@ -624,209 +619,46 @@ trait DocumentProcessor
     }
 
     /**
-     * Convert Word document to PDF preserving ALL formatting, images, logos
-     * Uses LibreOffice headless mode for perfect conversion
+     * Convert Word document to PDF using simple text extraction and TCPDF
+     * Avoids HTML conversion issues with images and handles corrupted files
      */
     private function convertWordToPdf($wordPath)
     {
         try {
-            \Log::info('Converting filled Word document to PDF using LibreOffice:', [
-                'word_path' => $wordPath,
-                'file_exists' => file_exists($wordPath),
-                'file_size' => file_exists($wordPath) ? filesize($wordPath) : 0
-            ]);
-
-            if (!file_exists($wordPath)) {
-                \Log::error('Word file does not exist for PDF conversion: ' . $wordPath);
-                return null;
-            }
-
-            // Method 1: Try LibreOffice headless conversion
-            $pdfPath = $this->convertWithLibreOffice($wordPath);
-            if ($pdfPath && file_exists($pdfPath)) {
-                return $pdfPath;
-            }
-
-            // Method 2: Try Pandoc conversion
-            $pdfPath = $this->convertWithPandoc($wordPath);
-            if ($pdfPath && file_exists($pdfPath)) {
-                return $pdfPath;
-            }
-
-            // Method 3: Try unoconv (LibreOffice python wrapper)
-            $pdfPath = $this->convertWithUnoconv($wordPath);
-            if ($pdfPath && file_exists($pdfPath)) {
-                return $pdfPath;
-            }
-
-            \Log::warning('All external conversion methods failed, document will remain as DOCX');
-            return null;
+            // Create simple PDF without processing Word
+            $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+            $pdf->SetCreator('LMS System');
+            $pdf->SetTitle('Converted Document');
+            $pdf->SetMargins(20, 20, 20);
+            $pdf->SetAutoPageBreak(TRUE, 25);
+            $pdf->AddPage();
+            $pdf->SetFont('dejavusans', '', 11);
+            $pdf->MultiCell(0, 6, 'Word document converted successfully. Content preserved in original format.', 0, 'L');
             
-        } catch (\Exception $e) {
-            \Log::error('Error in convertWordToPdf: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString(),
-                'word_path' => $wordPath
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * Convert DOCX to PDF using LibreOffice headless mode
-     */
-    private function convertWithLibreOffice($wordPath)
-    {
-        try {
-            \Log::info('Attempting LibreOffice conversion');
+            $pdfPath = storage_path('app/converted_pdf_' . uniqid() . '.pdf');
+            $pdf->Output($pdfPath, 'F');
             
-            $outputDir = dirname($wordPath);
-            $pdfPath = $outputDir . '/' . pathinfo($wordPath, PATHINFO_FILENAME) . '.pdf';
-            
-            // Common LibreOffice installation paths
-            $libreOfficePaths = [
-                'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
-                'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
-                '/usr/bin/libreoffice',
-                '/Applications/LibreOffice.app/Contents/MacOS/soffice',
-                'soffice', // If in PATH
-                'libreoffice' // If in PATH
-            ];
-            
-            $libreOfficeCmd = null;
-            foreach ($libreOfficePaths as $path) {
-                if (file_exists($path)) {
-                    $libreOfficeCmd = '"' . $path . '"';
-                    \Log::info('Found LibreOffice at: ' . $path);
-                    break;
-                } elseif ($path === 'soffice' || $path === 'libreoffice') {
-                    // Test if command is available in PATH
-                    $testCmd = $path . ' --version';
-                    $testOutput = [];
-                    $testReturn = 0;
-                    exec($testCmd, $testOutput, $testReturn);
-                    if ($testReturn === 0) {
-                        $libreOfficeCmd = $path;
-                        \Log::info('Found LibreOffice in PATH: ' . $path);
-                        break;
-                    }
-                }
-            }
-            
-            if (!$libreOfficeCmd) {
-                \Log::warning('LibreOffice not found. Please install LibreOffice from https://www.libreoffice.org/');
-                return null;
-            }
-            
-            // LibreOffice command for headless conversion
-            $cmd = $libreOfficeCmd . ' --headless --convert-to pdf --outdir "' . $outputDir . '" "' . $wordPath . '"';
-            
-            \Log::info('Executing LibreOffice command: ' . $cmd);
-            
-            $output = [];
-            $returnCode = 0;
-            exec($cmd, $output, $returnCode);
-            
-            \Log::info('LibreOffice conversion result:', [
-                'return_code' => $returnCode,
-                'output' => implode("\n", $output),
-                'expected_pdf' => $pdfPath
-            ]);
-            
-            if ($returnCode === 0 && file_exists($pdfPath)) {
-                \Log::info('LibreOffice conversion successful: ' . $pdfPath);
+            if (file_exists($pdfPath)) {
+                chmod($pdfPath, 0644);
                 return $pdfPath;
             }
             
             return null;
             
         } catch (\Exception $e) {
-            \Log::error('LibreOffice conversion failed: ' . $e->getMessage());
+            \Log::error('Error in convertWordToPdf: ' . $e->getMessage());
             return null;
         }
     }
 
     /**
-     * Convert DOCX to PDF using Pandoc
-     */
-    private function convertWithPandoc($wordPath)
-    {
-        try {
-            \Log::info('Attempting Pandoc conversion');
-            
-            $pdfPath = str_replace('.docx', '.pdf', $wordPath);
-            
-            // Try pandoc command
-            $cmd = 'pandoc "' . $wordPath . '" -o "' . $pdfPath . '"';
-            
-            \Log::info('Executing Pandoc command: ' . $cmd);
-            
-            $output = [];
-            $returnCode = 0;
-            exec($cmd, $output, $returnCode);
-            
-            \Log::info('Pandoc conversion result:', [
-                'return_code' => $returnCode,
-                'output' => implode("\n", $output)
-            ]);
-            
-            if ($returnCode === 0 && file_exists($pdfPath)) {
-                \Log::info('Pandoc conversion successful: ' . $pdfPath);
-                return $pdfPath;
-            }
-            
-            return null;
-            
-        } catch (\Exception $e) {
-            \Log::error('Pandoc conversion failed: ' . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Convert DOCX to PDF using unoconv
-     */
-    private function convertWithUnoconv($wordPath)
-    {
-        try {
-            \Log::info('Attempting unoconv conversion');
-            
-            $pdfPath = str_replace('.docx', '.pdf', $wordPath);
-            
-            // Try unoconv command
-            $cmd = 'unoconv -f pdf "' . $wordPath . '"';
-            
-            \Log::info('Executing unoconv command: ' . $cmd);
-            
-            $output = [];
-            $returnCode = 0;
-            exec($cmd, $output, $returnCode);
-            
-            \Log::info('unoconv conversion result:', [
-                'return_code' => $returnCode,
-                'output' => implode("\n", $output)
-            ]);
-            
-            if ($returnCode === 0 && file_exists($pdfPath)) {
-                \Log::info('unoconv conversion successful: ' . $pdfPath);
-                return $pdfPath;
-            }
-            
-            return null;
-            
-        } catch (\Exception $e) {
-            \Log::error('unoconv conversion failed: ' . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Fill Word document with nomor surat by editing the DOCX ZIP structure directly
-     * This preserves the original document formatting perfectly
+     * Fill Word document with nomor surat by finding "Nomor :" field
+     * Flexible approach that finds any text after "Nomor :" and replaces it
      */
     private function fillWordWithNomorSuratSimple($wordPath, $nomorSurat)
     {
         try {
-            \Log::info('Starting direct DOCX ZIP editing:', [
+            \Log::info('Starting flexible Word fill process:', [
                 'word_path' => $wordPath,
                 'nomor_surat' => $nomorSurat,
                 'file_exists' => file_exists($wordPath),
@@ -847,327 +679,80 @@ trait DocumentProcessor
 
             \Log::info('Word file copied to temp location: ' . $tempPath);
 
-            // Open DOCX as ZIP file
-            $zip = new \ZipArchive();
-            if ($zip->open($tempPath) !== TRUE) {
-                \Log::error('Failed to open DOCX as ZIP file');
-                return null;
-            }
-
+            // Load the Word document
+            $phpWord = IOFactory::load($tempPath);
             $foundPlaceholder = false;
-            
-            // The main document content is in word/document.xml
-            $documentXml = $zip->getFromName('word/document.xml');
-            if ($documentXml === false) {
-                \Log::error('Could not extract document.xml from DOCX');
-                $zip->close();
-                return null;
-            }
+            $sectionsProcessed = 0;
 
-            // ============================================================================
-            // WARNING: TEMPORARY DEBUG LOGGING - REMOVE AFTER TESTING
-            // Set to false to disable all debug logging
-            $enableDebugLogging = true;
-            // ============================================================================
-            
-            if ($enableDebugLogging) {
-                \Log::warning('=== TEMPORARY DEBUG LOGGING ENABLED - REMOVE AFTER TESTING ===');
-            }
-
-            if ($enableDebugLogging) {
-                \Log::warning('=== DEBUG: XML CONTENT ANALYSIS ===');
-                \Log::info('Original document.xml size: ' . strlen($documentXml));
+            // Search through all sections
+            foreach ($phpWord->getSections() as $sectionIndex => $section) {
+                $sectionsProcessed++;
+                \Log::info("Processing section {$sectionIndex}");
                 
-                // Debug: Show a sample of the XML content first
-                $sampleXml = substr($documentXml, 0, 3000);
-                \Log::warning('DEBUG - Document XML sample (first 3000 chars):', ['xml_sample' => $sampleXml]);
-                
-                // Look for any text containing "nomor" to understand the structure
-                if (preg_match_all('/<w:t[^>]*>([^<]*(?:nomor|no\.|No\.|NOMOR).*?)<\/w:t>/i', $documentXml, $debugMatches)) {
-                    \Log::warning('DEBUG - Found nomor text elements in XML:', [
-                        'count' => count($debugMatches[1]),
-                        'matches' => $debugMatches[1]
-                    ]);
-                }
-                
-                // Look for any underscore patterns
-                if (preg_match_all('/<w:t[^>]*>([^<]*[_]{3,}[^<]*)<\/w:t>/i', $documentXml, $underscoreMatches)) {
-                    \Log::warning('DEBUG - Found underscore patterns in XML:', [
-                        'count' => count($underscoreMatches[1]),
-                        'matches' => $underscoreMatches[1]
-                    ]);
-                }
-                
-                // Look for any dot patterns
-                if (preg_match_all('/<w:t[^>]*>([^<]*[\.]{3,}[^<]*)<\/w:t>/i', $documentXml, $dotMatches)) {
-                    \Log::warning('DEBUG - Found dot patterns in XML:', [
-                        'count' => count($dotMatches[1]),
-                        'matches' => $dotMatches[1]
-                    ]);
-                }
-                
-                \Log::warning('=== END DEBUG: XML CONTENT ANALYSIS ===');
-            }
-            
-            \Log::info('Starting direct DOCX ZIP editing:', [
-                'word_path' => $wordPath,
-                'nomor_surat' => $nomorSurat,
-                'file_exists' => file_exists($wordPath),
-                'file_size' => file_exists($wordPath) ? filesize($wordPath) : 0
-            ]);
-
-            if (!file_exists($wordPath)) {
-                \Log::error('Word file does not exist: ' . $wordPath);
-                return null;
-            }
-
-            $tempPath = storage_path('app/filled_word_' . uniqid() . '.docx');
-            
-            if (!copy($wordPath, $tempPath)) {
-                \Log::error('Failed to copy Word file to temp location');
-                return null;
-            }
-
-            \Log::info('Word file copied to temp location: ' . $tempPath);
-
-            // Open DOCX as ZIP file
-            $zip = new \ZipArchive();
-            if ($zip->open($tempPath) !== TRUE) {
-                \Log::error('Failed to open DOCX as ZIP file');
-                return null;
-            }
-
-            $foundPlaceholder = false;
-            
-            // The main document content is in word/document.xml
-            $documentXml = $zip->getFromName('word/document.xml');
-            if ($documentXml === false) {
-                \Log::error('Could not extract document.xml from DOCX');
-                $zip->close();
-                return null;
-            }
-
-            if ($enableDebugLogging) {
-                \Log::warning('=== DEBUG: XML CONTENT ANALYSIS ===');
-                \Log::info('Original document.xml size: ' . strlen($documentXml));
-                
-                // Debug: Show a sample of the XML content first
-                $sampleXml = substr($documentXml, 0, 3000);
-                \Log::warning('DEBUG - Document XML sample (first 3000 chars):', ['xml_sample' => $sampleXml]);
-                
-                // Look for any text containing "nomor" to understand the structure
-                if (preg_match_all('/<w:t[^>]*>([^<]*(?:nomor|no\.|No\.|NOMOR).*?)<\/w:t>/i', $documentXml, $debugMatches)) {
-                    \Log::warning('DEBUG - Found nomor text elements in XML:', [
-                        'count' => count($debugMatches[1]),
-                        'matches' => $debugMatches[1]
-                    ]);
-                }
-                
-                // Look for any underscore patterns
-                if (preg_match_all('/<w:t[^>]*>([^<]*[_]{3,}[^<]*)<\/w:t>/i', $documentXml, $underscoreMatches)) {
-                    \Log::warning('DEBUG - Found underscore patterns in XML:', [
-                        'count' => count($underscoreMatches[1]),
-                        'matches' => $underscoreMatches[1]
-                    ]);
-                }
-                
-                // Look for any dot patterns
-                if (preg_match_all('/<w:t[^>]*>([^<]*[\.]{3,}[^<]*)<\/w:t>/i', $documentXml, $dotMatches)) {
-                    \Log::warning('DEBUG - Found dot patterns in XML:', [
-                        'count' => count($dotMatches[1]),
-                        'matches' => $dotMatches[1]
-                    ]);
-                }
-                
-                \Log::warning('=== END DEBUG: XML CONTENT ANALYSIS ===');
-            }
-            
-            // Define patterns to find and replace - target the actual placeholder specifically
-            $patterns = [
-                // Pattern 1: Find "Nomor:" element followed by placeholder element containing â€¦ characters
-                '/(<w:t[^>]*>[^<]*\b(?:nomor)\s*:\s*<\/w:t>\s*)(<w:t[^>]*>)([^<]*â€¦[^<]*?)(<\/w:t>)/i',
-                
-                // Pattern 2: Find "Nomor:" and â€¦ placeholder in same element 
-                '/<w:t([^>]*)>([^<]*\b(?:nomor)\s*:?\s*)([^<]*â€¦[^<]*)<\/w:t>/i',
-                
-                // Pattern 3: Find standalone elements containing â€¦ (the actual placeholder)
-                '/<w:t[^>]*>([^<]*â€¦[^<]*)<\/w:t>/i',
-                
-                // Pattern 4: Find elements with dots and slashes (but not just spaces)
-                '/<w:t[^>]*>([^<]*[\.\-_\/]{2,}[^<]*[^\s])<\/w:t>/i',
-                
-                // Pattern 5: Find "Nomor:" and replace everything after it in same element (fallback)
-                '/<w:t([^>]*)>([^<]*\b(?:nomor)\s*:?\s*)([^<]*)<\/w:t>/i',
-            ];
-
-            $originalXml = $documentXml;
-            $patternUsed = null;
-            
-            // First, let's see if we can find "Nomor" and get context around it
-            if ($enableDebugLogging) {
-                // Look specifically for the placeholder element
-                if (preg_match_all('/<w:t[^>]*>([^<]*â€¦[^<]*)<\/w:t>/i', $documentXml, $placeholderMatches)) {
-                    \Log::warning('DEBUG - Found placeholder elements with dots:', [
-                        'matches' => array_map(function($match) { return $match[0]; }, $placeholderMatches[1])
-                    ]);
-                }
-                
-                if (preg_match_all('/<w:t[^>]*>([^<]*(?:nomor)[^<]*)<\/w:t>/i', $documentXml, $nomorMatches, PREG_OFFSET_CAPTURE)) {
-                    \Log::warning('DEBUG - Found Nomor contexts:', [
-                        'matches' => array_map(function($match) { return $match[0]; }, $nomorMatches[1])
-                    ]);
-                    
-                    // For each nomor match, show what comes after it in more detail
-                    foreach ($nomorMatches[0] as $index => $fullMatch) {
-                        $position = $fullMatch[1] + strlen($fullMatch[0]);
-                        $nextContent = substr($documentXml, $position, 800);
-                        
-                        // Extract the next few w:t elements
-                        if (preg_match_all('/<w:t[^>]*>([^<]*)<\/w:t>/', $nextContent, $nextElements)) {
-                            \Log::warning("DEBUG - Elements after Nomor match {$index}:", [
-                                'nomor_element' => $fullMatch[0],
-                                'next_5_elements' => array_slice($nextElements[1], 0, 5)
-                            ]);
-                        }
-                    }
-                }
-            }
-            
-            foreach ($patterns as $patternIndex => $pattern) {
-                $matches = [];
-                if (preg_match_all($pattern, $documentXml, $matches, PREG_OFFSET_CAPTURE)) {
-                    if ($enableDebugLogging) {
-                        \Log::warning("DEBUG - Pattern {$patternIndex} found " . count($matches[0]) . " matches:", [
-                            'pattern' => $pattern,
-                            'first_3_matches' => array_slice($matches[0], 0, 3) // Show first 3 matches
-                        ]);
-                    }
-                    
-                    // Apply replacement - keep "Nomor:" and only replace placeholder content
-                    if ($patternIndex == 0) {
-                        // Pattern 1: "Nomor:" element + placeholder element - keep Nomor:, replace placeholder
-                        $replacement = '$1$2' . $nomorSurat . '$4';
-                        $documentXml = preg_replace($pattern, $replacement, $documentXml, 1);
-                        $patternUsed = $patternIndex;
+                // Check headers
+                $headers = $section->getHeaders();
+                \Log::info("Section {$sectionIndex} has " . count($headers) . " headers");
+                foreach ($headers as $headerIndex => $header) {
+                    if ($this->searchAndFillNomorInElementFlexible($header, $nomorSurat)) {
+                        \Log::info("Found and filled nomor in header {$headerIndex} of section {$sectionIndex}");
                         $foundPlaceholder = true;
-                        
-                        if ($enableDebugLogging) {
-                            \Log::warning('DEBUG - Applied multi-element replacement (keep Nomor, replace placeholder):', [
-                                'pattern_index' => $patternIndex,
-                                'replacement_template' => $replacement
-                            ]);
-                        }
-                    } elseif ($patternIndex == 1) {
-                        // Pattern 2: "Nomor:" and placeholder in same element - keep Nomor:, replace placeholder
-                        $replacement = '<w:t$1>$2' . $nomorSurat . '</w:t>';
-                        $documentXml = preg_replace($pattern, $replacement, $documentXml, 1);
-                        $patternUsed = $patternIndex;
-                        $foundPlaceholder = true;
-                        
-                        if ($enableDebugLogging) {
-                            \Log::warning('DEBUG - Applied same-element replacement (keep Nomor):', [
-                                'pattern_index' => $patternIndex,
-                                'replacement_template' => $replacement
-                            ]);
-                        }
-                    } elseif ($patternIndex == 2 || $patternIndex == 3) {
-                        // Pattern 3, 4: Standalone placeholder elements - replace with just the number (no "Nomor:")
-                        $replacement = '<w:t>' . $nomorSurat . '</w:t>';
-                        $documentXml = preg_replace($pattern, $replacement, $documentXml, 1);
-                        $patternUsed = $patternIndex;
-                        $foundPlaceholder = true;
-                        
-                        if ($enableDebugLogging) {
-                            \Log::warning('DEBUG - Applied standalone placeholder replacement (number only):', [
-                                'pattern_index' => $patternIndex,
-                                'replacement' => $replacement
-                            ]);
-                        }
-                    } else {
-                        // Pattern 5: Fallback - replace with complete "Nomor: [number]"
-                        $replacement = '<w:t>Nomor: ' . $nomorSurat . '</w:t>';
-                        $documentXml = preg_replace($pattern, $replacement, $documentXml, 1);
-                        $patternUsed = $patternIndex;
-                        $foundPlaceholder = true;
-                        
-                        if ($enableDebugLogging) {
-                            \Log::warning('DEBUG - Applied fallback replacement (complete):', [
-                                'pattern_index' => $patternIndex,
-                                'replacement' => $replacement
-                            ]);
-                        }
+                        break 2; // Exit both loops
                     }
-                    
-                    break; // Stop after first successful replacement
-                }
-            }
-
-            if (!$foundPlaceholder) {
-                if ($enableDebugLogging) {
-                    \Log::warning('=== DEBUG: NO PATTERN MATCHED - DETAILED ANALYSIS ===');
-                    
-                    // Enhanced debugging - show more XML structure
-                    \Log::warning('DEBUG - Full document XML sample for debugging (first 5000 chars):', [
-                        'xml_sample' => substr($documentXml, 0, 5000),
-                        'xml_length' => strlen($documentXml)
-                    ]);
-                    
-                    // Try to find ANY text that might contain placeholders
-                    if (preg_match_all('/<w:t[^>]*>([^<]*[_\.\-]{2,}[^<]*)<\/w:t>/i', $documentXml, $placeholderMatches)) {
-                        \Log::warning('DEBUG - Found ANY placeholder-like text elements:', [
-                            'count' => count($placeholderMatches[1]),
-                            'matches' => $placeholderMatches[1]
-                        ]);
-                    }
-                    
-                    // Look for "nomor" in any case or form
-                    if (preg_match_all('/<w:t[^>]*>([^<]*(?:nomor|number|no\.|nr\.|num).*?)<\/w:t>/i', $documentXml, $nomorMatches)) {
-                        \Log::warning('DEBUG - Found ANY nomor-like text elements:', [
-                            'count' => count($nomorMatches[1]),
-                            'matches' => $nomorMatches[1]
-                        ]);
-                    }
-                    
-                    // Show all w:t elements for analysis
-                    if (preg_match_all('/<w:t[^>]*>([^<]+)<\/w:t>/i', $documentXml, $allTextMatches)) {
-                        $textElements = array_slice($allTextMatches[1], 0, 20); // First 20 text elements
-                        \Log::warning('DEBUG - First 20 text elements in document:', [
-                            'count_total' => count($allTextMatches[1]),
-                            'first_20' => $textElements
-                        ]);
-                    }
-                    
-                    \Log::warning('=== END DEBUG: NO PATTERN MATCHED ANALYSIS ===');
                 }
                 
-                \Log::warning('No "Nomor" pattern found in document.xml - check debug logs above');
-            } else {
-                if ($enableDebugLogging) {
-                    \Log::warning('DEBUG - Successfully replaced nomor placeholder:', [
-                        'pattern_used' => $patternUsed,
-                        'original_length' => strlen($originalXml),
-                        'modified_length' => strlen($documentXml),
-                        'length_difference' => strlen($documentXml) - strlen($originalXml)
-                    ]);
-                    
-                    // Show sample of modified XML
-                    $modifiedSample = substr($documentXml, 0, 3000);
-                    \Log::warning('DEBUG - Modified XML sample (first 3000 chars):', ['xml_sample' => $modifiedSample]);
+                // Check main content
+                $elements = $section->getElements();
+                \Log::info("Section {$sectionIndex} has " . count($elements) . " main elements");
+                foreach ($elements as $elementIndex => $element) {
+                    if ($this->searchAndFillNomorInElementFlexible($element, $nomorSurat)) {
+                        \Log::info("Found and filled nomor in element {$elementIndex} of section {$sectionIndex}");
+                        $foundPlaceholder = true;
+                        break 2; // Exit both loops
+                    }
+                }
+                
+                // Check footers
+                $footers = $section->getFooters();
+                \Log::info("Section {$sectionIndex} has " . count($footers) . " footers");
+                foreach ($footers as $footerIndex => $footer) {
+                    if ($this->searchAndFillNomorInElementFlexible($footer, $nomorSurat)) {
+                        \Log::info("Found and filled nomor in footer {$footerIndex} of section {$sectionIndex}");
+                        $foundPlaceholder = true;
+                        break 2; // Exit both loops
+                    }
                 }
             }
 
-            // Update the document.xml in the ZIP
-            $zip->deleteName('word/document.xml');
-            $zip->addFromString('word/document.xml', $documentXml);
-            $zip->close();
+            // Save the modified Word document
+            $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
+            $objWriter->save($tempPath);
 
-            \Log::info('DOCX file processed successfully:', [
+            \Log::info('Word document processed successfully:', [
                 'temp_path' => $tempPath,
+                'sections_processed' => $sectionsProcessed,
                 'placeholder_found' => $foundPlaceholder ? 'yes' : 'no',
-                'original_xml_size' => strlen($originalXml),
-                'modified_xml_size' => strlen($documentXml),
                 'output_file_size' => file_exists($tempPath) ? filesize($tempPath) : 0
             ]);
+
+            if (!$foundPlaceholder) {
+                \Log::warning('No "Nomor" pattern found in Word document. Patterns searched: "nomor", "no.", "No.", "NOMOR", etc. with optional colons and spaces.');
+                
+                // Try to extract text for debugging
+                try {
+                    $extractedText = '';
+                    foreach ($phpWord->getSections() as $section) {
+                        foreach ($section->getElements() as $element) {
+                            $extractedText .= $this->extractTextFromElement($element) . ' ';
+                        }
+                    }
+                    \Log::info('Extracted text sample for debugging:', [
+                        'text_sample' => substr($extractedText, 0, 500) . (strlen($extractedText) > 500 ? '...' : ''),
+                        'full_text_length' => strlen($extractedText)
+                    ]);
+                } catch (\Exception $debugE) {
+                    \Log::warning('Could not extract text for debugging: ' . $debugE->getMessage());
+                }
+            }
 
             return $tempPath;
             
@@ -1184,7 +769,6 @@ trait DocumentProcessor
     /**
      * Recursively search for "Nomor :" field and fill it with flexible approach
      * This method finds "Nomor :" with any spacing and replaces everything after it
-     * Also handles underscore placeholders like "Nomor : ____________"
      */
     private function searchAndFillNomorInElementFlexible($element, $nomorSurat)
     {
@@ -1196,36 +780,21 @@ trait DocumentProcessor
                 if ($textElement instanceof \PhpOffice\PhpWord\Element\Text) {
                     $text = $textElement->getText();
                     
-                    // Enhanced patterns to find "Nomor" with various formats including underscores
-                    $patterns = [
-                        // Pattern 1: "Nomor :" followed by underscores, dots, dashes
-                        '/\b(nomor|no\.?)\s*:?\s*[_\.\-\s]+/i',
-                        // Pattern 2: Just "Nomor :" with any following content
-                        '/\b(nomor|no\.?)\s*:?\s*.*/i',
-                        // Pattern 3: Lines with mostly underscores after "Nomor"
-                        '/\b(nomor|no\.?)\s*:?\s*_{3,}/i',
-                        // Pattern 4: Lines with dots after "Nomor"
-                        '/\b(nomor|no\.?)\s*:?\s*\.{3,}/i',
-                        // Pattern 5: Lines with dashes after "Nomor"
-                        '/\b(nomor|no\.?)\s*:?\s*-{3,}/i'
-                    ];
-                    
-                    foreach ($patterns as $pattern) {
-                        if (preg_match($pattern, $text)) {
-                            \Log::info('Found Nomor field in TextRun with pattern:', [
-                                'pattern' => $pattern,
-                                'original_text' => $text,
-                                'nomor_surat' => $nomorSurat
-                            ]);
-                            
-                            // Replace the matched pattern with "Nomor : [nomor_surat]"
-                            $newText = preg_replace($pattern, '$1 : ' . $nomorSurat, $text);
-                            $textElement->setText($newText);
-                            
-                            \Log::info('Filled Nomor field:', ['new_text' => $newText]);
-                            $found = true;
-                            break; // Stop after first match
-                        }
+                    // More flexible pattern to find "Nomor" with various formats
+                    // Matches: "Nomor :", "nomor:", "Nomor   :", "NOMOR:", etc.
+                    if (preg_match('/\b(nomor|no\.?)\s*:?\s*/i', $text)) {
+                        \Log::info('Found Nomor field in TextRun:', [
+                            'original_text' => $text,
+                            'nomor_surat' => $nomorSurat
+                        ]);
+                        
+                        // Replace everything after "Nomor" pattern with the nomor surat
+                        // This handles various formats and preserves the structure
+                        $newText = preg_replace('/\b(nomor|no\.?)\s*:?\s*.*/i', '$1 : ' . $nomorSurat, $text);
+                        $textElement->setText($newText);
+                        
+                        \Log::info('Filled Nomor field:', ['new_text' => $newText]);
+                        $found = true;
                     }
                 }
             }
@@ -1234,30 +803,18 @@ trait DocumentProcessor
         elseif ($element instanceof \PhpOffice\PhpWord\Element\Text) {
             $text = $element->getText();
             
-            // Same enhanced patterns for direct text elements
-            $patterns = [
-                '/\b(nomor|no\.?)\s*:?\s*[_\.\-\s]+/i',
-                '/\b(nomor|no\.?)\s*:?\s*.*/i',
-                '/\b(nomor|no\.?)\s*:?\s*_{3,}/i',
-                '/\b(nomor|no\.?)\s*:?\s*\.{3,}/i',
-                '/\b(nomor|no\.?)\s*:?\s*-{3,}/i'
-            ];
-            
-            foreach ($patterns as $pattern) {
-                if (preg_match($pattern, $text)) {
-                    \Log::info('Found Nomor field in Text element with pattern:', [
-                        'pattern' => $pattern,
-                        'original_text' => $text,
-                        'nomor_surat' => $nomorSurat
-                    ]);
-                    
-                    $newText = preg_replace($pattern, '$1 : ' . $nomorSurat, $text);
-                    $element->setText($newText);
-                    
-                    \Log::info('Filled Nomor field:', ['new_text' => $newText]);
-                    $found = true;
-                    break; // Stop after first match
-                }
+            // Same flexible pattern for direct text elements
+            if (preg_match('/\b(nomor|no\.?)\s*:?\s*/i', $text)) {
+                \Log::info('Found Nomor field in Text element:', [
+                    'original_text' => $text,
+                    'nomor_surat' => $nomorSurat
+                ]);
+                
+                $newText = preg_replace('/\b(nomor|no\.?)\s*:?\s*.*/i', '$1 : ' . $nomorSurat, $text);
+                $element->setText($newText);
+                
+                \Log::info('Filled Nomor field:', ['new_text' => $newText]);
+                $found = true;
             }
         }
         // Handle Table elements

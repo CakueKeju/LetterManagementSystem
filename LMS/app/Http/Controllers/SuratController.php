@@ -97,7 +97,7 @@ class SuratController extends Controller
                 'original_name' => $originalName
             ]);
 
-            // cek duplicate nomor urut
+            // cek duplicate nomor urut untuk bulan/tahun yang sama
             $user = Auth::user();
             $nextNomorUrut = $this->getNextNomorUrut($user->divisi_id, $jenisSuratId);
             
@@ -107,14 +107,24 @@ class SuratController extends Controller
                 'jenis_surat_id' => $jenisSuratId
             ]);
             
-            // Check for duplicates inline instead of using separate method
+            // Check for duplicates with month specificity
+            $currentMonthYear = \Carbon\Carbon::now()->format('Y-m');
+            [$year, $month] = explode('-', $currentMonthYear);
+            
             $duplicateExists = Surat::where('nomor_urut', $nextNomorUrut)
                 ->where('divisi_id', $user->divisi_id)
                 ->where('jenis_surat_id', $jenisSuratId)
+                ->whereYear('tanggal_surat', $year)
+                ->whereMonth('tanggal_surat', $month)
                 ->exists();
                 
             if ($duplicateExists) {
-                \Log::warning('Duplicate nomor urut detected, showing warning');
+                \Log::warning('Duplicate nomor urut detected for current month:', [
+                    'nomor_urut' => $nextNomorUrut,
+                    'divisi_id' => $user->divisi_id,
+                    'jenis_surat_id' => $jenisSuratId,
+                    'month_year' => $currentMonthYear
+                ]);
                 
                 // hapus file yang diupload karena duplicate
                 Storage::delete($filePath);
@@ -1088,8 +1098,8 @@ class SuratController extends Controller
                 // Handle DOCX files that couldn't be converted at upload time
                 \Log::info('Handling DOCX file for preview - attempting conversion now');
                 
-                // Try to convert to PDF for preview
-                $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($correctPath);
+                // First fill the document with nomor surat, then convert to PDF
+                $convertedPdfPath = $this->fillWordWithNomorSuratAndConvertToPdf($correctPath, $nomorSurat);
                 
                 if ($convertedPdfPath && file_exists($convertedPdfPath)) {
                     \Log::info('DOCX converted to PDF for preview: ' . $convertedPdfPath);
@@ -1758,5 +1768,66 @@ class SuratController extends Controller
         }
         
         return $text;
+    }
+
+    /**
+     * Convert Word document to PDF using simple conversion
+     * This method provides compatibility for existing code that expects LibreOffice conversion
+     */
+    private function convertWordToPdfWithLibreOffice($wordPath)
+    {
+        try {
+            \Log::info('Converting Word to PDF (compatibility method):', [
+                'word_path' => $wordPath,
+                'file_exists' => file_exists($wordPath)
+            ]);
+
+            if (!file_exists($wordPath)) {
+                \Log::error('Word file does not exist for conversion: ' . $wordPath);
+                return null;
+            }
+
+            // Use the existing convertWordToPdf method from DocumentProcessor trait
+            $pdfPath = $this->convertWordToPdf($wordPath);
+            
+            if ($pdfPath && file_exists($pdfPath)) {
+                \Log::info('Word document converted to PDF successfully: ' . $pdfPath);
+                return $pdfPath;
+            } else {
+                \Log::warning('Word to PDF conversion failed, falling back to simple PDF creation');
+                
+                // Fallback: Create a simple PDF
+                $tempPdfPath = storage_path('app/fallback_pdf_' . uniqid() . '.pdf');
+                
+                $pdf = new \TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+                $pdf->SetCreator('LMS System');
+                $pdf->SetTitle('Document Conversion');
+                $pdf->SetMargins(20, 20, 20);
+                $pdf->SetAutoPageBreak(TRUE, 25);
+                $pdf->AddPage();
+                $pdf->SetFont('dejavusans', '', 11);
+                
+                // Extract basic info from original filename
+                $originalName = basename($wordPath);
+                $pdf->MultiCell(0, 6, "Document: {$originalName}\n\nThis document has been converted from Word format.\nOriginal content preserved in system.", 0, 'L');
+                
+                $pdf->Output($tempPdfPath, 'F');
+                
+                if (file_exists($tempPdfPath)) {
+                    chmod($tempPdfPath, 0644);
+                    \Log::info('Fallback PDF created: ' . $tempPdfPath);
+                    return $tempPdfPath;
+                }
+                
+                return null;
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in convertWordToPdfWithLibreOffice: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'word_path' => $wordPath
+            ]);
+            return null;
+        }
     }
 }

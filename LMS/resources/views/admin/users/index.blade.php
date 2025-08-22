@@ -166,7 +166,7 @@
 
                         <!-- Pagination -->
                         <div class="d-flex justify-content-center">
-                            {{ $users->appends(request()->query())->links() }}
+                            {{ $users->appends(request()->query())->links('pagination::bootstrap-5') }}
                         </div>
                     @else
                         <div class="text-center py-4">
