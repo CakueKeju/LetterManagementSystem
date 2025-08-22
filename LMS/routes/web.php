@@ -300,16 +300,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // ================================= NOTIFICATION ROUTES =================================
 
 Route::middleware(['auth', 'active'])->group(function() {
-    // Notification page
-    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
-    Route::get('/notifications/test', function() { return view('notifications.test'); })->name('notifications.test');
-    
-    // Notification API endpoints
-    Route::get('/api/notifications', [NotificationController::class, 'getData'])->name('notifications.data');
+    // Notification API endpoints - tidak ada halaman notifikasi terpisah
     Route::get('/api/notifications/recent', [NotificationController::class, 'getRecent'])->name('notifications.recent');
     Route::get('/api/notifications/unread-count', [NotificationController::class, 'getUnreadCount'])->name('notifications.unread-count');
     Route::post('/api/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
     Route::post('/api/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    
+    // Notification click handler - redirect ke home dengan filter surat
+    Route::get('/notifications/{id}/view', [NotificationController::class, 'viewNotification'])->name('notifications.view');
     
     // Admin only
     Route::post('/api/notifications/cleanup', [NotificationController::class, 'cleanup'])->name('notifications.cleanup')->middleware('admin');

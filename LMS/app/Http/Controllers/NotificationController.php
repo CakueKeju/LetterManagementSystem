@@ -19,14 +19,49 @@ class NotificationController extends Controller
     }
 
     /**
-     * Display notifications page
+     * View notification and redirect to appropriate page based on user role
+     */
+    public function viewNotification(Request $request, int $id)
+    {
+        $user = Auth::user();
+        
+        // Mark notification as read
+        $this->notificationService->markAsRead($id, $user->id);
+        
+        // Get notification to find related letter
+        $notification = $this->notificationService->getNotificationById($id, $user->id);
+        
+        if ($notification && $notification->surat) {
+            if ($user->is_admin) {
+                // Admin diarahkan ke halaman admin surat
+                return redirect()->route('admin.surat.index')->with([
+                    'highlight_letter' => $notification->surat->id,
+                    'success' => 'Notifikasi telah dibaca. Surat terkait ditampilkan di bawah.'
+                ]);
+            } else {
+                // User biasa diarahkan ke home
+                return redirect()->route('home')->with([
+                    'highlight_letter' => $notification->surat->id,
+                    'success' => 'Notifikasi telah dibaca. Surat terkait ditampilkan di bawah.'
+                ]);
+            }
+        }
+        
+        // If no letter found, redirect based on user role
+        if ($user->is_admin) {
+            return redirect()->route('admin.surat.index')->with('info', 'Notifikasi telah dibaca.');
+        } else {
+            return redirect()->route('home')->with('info', 'Notifikasi telah dibaca.');
+        }
+    }
+
+    /**
+     * Display notifications page - REMOVED (tidak diperlukan lagi)
      */
     public function index(Request $request): View
     {
-        $user = Auth::user();
-        $notifications = $this->notificationService->getUserNotifications($user->id);
-        
-        return view('notifications.index', compact('notifications'));
+        // Redirect to home instead
+        return redirect()->route('home')->with('info', 'Notifikasi sekarang terintegrasi dengan beranda.');
     }
 
     /**

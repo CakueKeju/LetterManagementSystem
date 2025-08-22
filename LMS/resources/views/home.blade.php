@@ -100,7 +100,9 @@
             </select>
         </div>
         <div class="col-md-2">
-            <button type="submit" class="btn btn-primary w-100">Filter</button>
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-search me-1"></i>Filter
+            </button>
         </div>
     </form>
     <script>
@@ -126,7 +128,7 @@
             </thead>
             <tbody>
                 @forelse($letters as $i => $surat)
-                    <tr>
+                    <tr {{ isset($highlightLetter) && $highlightLetter == $surat->id ? 'class=table-warning' : '' }} {{ isset($highlightLetter) && $highlightLetter == $surat->id ? 'id=highlighted-letter' : '' }}>
                         <td>{{ $letters->firstItem() + $i }}</td>
                         <td>{{ $surat->nomor_surat_display }}</td>
                         <td>{{ $surat->perihal }}</td>
@@ -167,4 +169,35 @@
         {{ $letters->withQueryString()->links('pagination::bootstrap-5') }}
     </div>
 </div>
+
+@if(isset($highlightLetter))
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Scroll to highlighted letter
+    const highlightedRow = document.getElementById('highlighted-letter');
+    if (highlightedRow) {
+        highlightedRow.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+        });
+        
+        // Add pulsing animation
+        highlightedRow.style.animation = 'pulse 2s infinite';
+        
+        // Remove animation after 6 seconds
+        setTimeout(() => {
+            highlightedRow.style.animation = '';
+        }, 6000);
+    }
+});
+</script>
+<style>
+@keyframes pulse {
+    0% { background-color: #fff3cd; }
+    50% { background-color: #ffeaa7; }
+    100% { background-color: #fff3cd; }
+}
+</style>
+@endif
+
 @endsection

@@ -61,25 +61,17 @@
                                     </span>
                                 </a>
 
-                                <div class="dropdown-menu dropdown-menu-end" aria-labelledby="notificationDropdown" style="width: 320px; max-height: 400px; overflow-y: auto; z-index: 1051;">
-                                    <div class="dropdown-header">
+                                <div class="dropdown-menu dropdown-menu-end" aria-labelledby="notificationDropdown" style="width: 350px; max-height: 400px; overflow-y: auto; z-index: 1051;">
+                                    <div class="dropdown-header d-flex justify-content-between align-items-center">
                                         <strong>Notifikasi</strong>
+                                        <button type="button" class="btn btn-sm btn-outline-success" onclick="markAllNotificationsRead()" title="Tandai Semua Dibaca">
+                                            <i class="fas fa-check-double"></i>
+                                        </button>
                                     </div>
                                     <div class="dropdown-divider"></div>
                                     <div id="notificationDropdownContent">
                                         <div class="text-center p-3">
                                             <i class="fas fa-spinner fa-spin"></i> Loading...
-                                        </div>
-                                    </div>
-                                    <div class="dropdown-divider"></div>
-                                    <div class="dropdown-item-text text-center">
-                                        <div class="d-flex justify-content-between">
-                                            <a href="{{ route('notifications.index') }}" class="btn btn-sm btn-outline-primary">
-                                                Lihat Semua
-                                            </a>
-                                            <button type="button" class="btn btn-sm btn-outline-success" onclick="markAllNotificationsRead()">
-                                                Tandai Dibaca
-                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -221,19 +213,24 @@
                         const typeColor = notification.type === 'new_letter' ? 'text-primary' : 'text-success';
                         
                         html += `
-                            <a class="dropdown-item ${isUnread ? 'bg-light' : ''}" href="#" onclick="viewNotificationFromDropdown(${notification.id}, ${notification.surat_id})" style="white-space: normal; text-decoration: none;">
-                                <div class="d-flex align-items-start py-2">
-                                    <div class="me-3">
+                            <div class="notification-item p-3 border-bottom ${isUnread ? 'bg-light' : ''}" data-id="${notification.id}">
+                                <div class="d-flex align-items-start">
+                                    <div class="me-2">
                                         <i class="fas ${typeIcon} ${typeColor}"></i>
                                     </div>
                                     <div class="flex-grow-1">
-                                        <h6 class="mb-1 ${isUnread ? 'fw-bold' : ''}" style="font-size: 0.85rem;">${notification.title}</h6>
-                                        <p class="mb-1 text-muted" style="font-size: 0.75rem; line-height: 1.3;">${notification.message.substring(0, 80)}${notification.message.length > 80 ? '...' : ''}</p>
-                                        <small class="text-muted" style="font-size: 0.7rem;">${formatNotificationDate(notification.created_at)}</small>
+                                        <div class="d-flex justify-content-between align-items-start mb-1">
+                                            <h6 class="mb-0 ${isUnread ? 'fw-bold' : ''}" style="font-size: 0.85rem;">${notification.title}</h6>
+                                            <div class="d-flex align-items-center gap-1">
+                                                ${isUnread ? `<button class="btn btn-sm btn-outline-success" onclick="markAsRead(${notification.id})" title="Tandai Dibaca" style="padding: 0.1rem 0.3rem; font-size: 0.7rem;"><i class="fas fa-check"></i></button>` : ''}
+                                                <span class="badge bg-primary" style="font-size: 0.6rem;">${formatNotificationDate(notification.created_at)}</span>
+                                            </div>
+                                        </div>
+                                        <p class="mb-1 text-muted" style="font-size: 0.8rem; line-height: 1.3;">${notification.message}</p>
+                                        ${notification.surat_id ? `<div class="mt-2"><a href="/notifications/${notification.id}/view" class="btn btn-sm btn-primary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;"><i class="fas fa-eye me-1"></i> Lihat Surat</a></div>` : ''}
                                     </div>
-                                    ${isUnread ? '<div class="ms-2"><span class="badge bg-primary rounded-pill" style="font-size: 0.6rem;">Baru</span></div>' : ''}
                                 </div>
-                            </a>
+                            </div>
                         `;
                     });
                     content.innerHTML = html;
@@ -245,28 +242,37 @@
             });
         }
         
-        function viewNotificationFromDropdown(notificationId, suratId) {
-            // Mark notification as read
-            fetch(`/api/notifications/${notificationId}/read`, {
+        function markAsRead(notificationId) {
+            fetch(`/api/notifications/${notificationId}/mark-read`, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json'
+                    'Content-Type': 'application/json',
                 }
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Update notification counts
-                    updateUnreadCount();
-                    // Redirect to surat detail
-                    window.location.href = `/surats/${suratId}`;
+                    // Update UI
+                    const item = document.querySelector(`[data-id="${notificationId}"]`);
+                    if (item) {
+                        item.classList.remove('bg-light');
+                        const button = item.querySelector('button[onclick*="markAsRead"]');
+                        if (button) {
+                            button.remove();
+                        }
+                        const title = item.querySelector('h6');
+                        if (title) {
+                            title.classList.remove('fw-bold');
+                        }
+                    }
+                    
+                    // Reload notification count
+                    loadNotificationCount();
                 }
             })
             .catch(error => {
                 console.error('Error marking notification as read:', error);
-                // Still redirect even if marking as read fails
-                window.location.href = `/surats/${suratId}`;
             });
         }
         
@@ -295,22 +301,21 @@
         function formatNotificationDate(dateString) {
             const date = new Date(dateString);
             const now = new Date();
-            const diffTime = Math.abs(now - date);
-            const diffMinutes = Math.ceil(diffTime / (1000 * 60));
-            const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
-            if (diffMinutes < 60) {
-                return `${diffMinutes} menit lalu`;
-            } else if (diffHours < 24) {
-                return `${diffHours} jam lalu`;
-            } else if (diffDays === 1) {
-                return 'Kemarin';
-            } else if (diffDays <= 7) {
-                return `${diffDays} hari lalu`;
-            } else {
-                return date.toLocaleDateString('id-ID');
+            // Check if it's today
+            if (date.toDateString() === now.toDateString()) {
+                return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
             }
+            
+            // Check if it's yesterday
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (date.toDateString() === yesterday.toDateString()) {
+                return 'Kemarin';
+            }
+            
+            // For other dates, show day/month
+            return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
         }
         
         // Clean up polling when page is unloaded

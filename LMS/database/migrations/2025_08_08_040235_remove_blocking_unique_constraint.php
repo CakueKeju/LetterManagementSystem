@@ -10,10 +10,14 @@ return new class extends Migration
     
     public function up(): void
     {
-        Schema::table('surat', function (Blueprint $table) {
-            // hapus constraint yang ngeblok nomor per bulan
-            $table->dropUnique('idx_surat_nomor_divisi_jenis_unique');
-        });
+        // Try to drop the index, ignore if it doesn't exist
+        try {
+            Schema::table('surat', function (Blueprint $table) {
+                $table->dropUnique('idx_surat_nomor_divisi_jenis_unique');
+            });
+        } catch (Exception $e) {
+            // Index doesn't exist, ignore the error
+        }
     }
 
     // ================================= MIGRATION DOWN =================================

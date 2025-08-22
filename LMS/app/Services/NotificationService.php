@@ -157,6 +157,17 @@ class NotificationService
     }
 
     /**
+     * Get a specific notification by ID for a user
+     */
+    public function getNotificationById(int $notificationId, int $userId): ?Notification
+    {
+        return Notification::where('id', $notificationId)
+            ->where('user_id', $userId)
+            ->with('surat')
+            ->first();
+    }
+
+    /**
      * Mark all notifications as read for a user
      */
     public function markAllAsRead(int $userId): int

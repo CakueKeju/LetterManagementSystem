@@ -1,0 +1,172 @@
+// Database Model untuk Letter Management System (LMS)
+// Format: DBML (Database Markup Language)
+// Updated: August 2025
+
+Table users {
+  id integer [pk, increment, note: 'Primary key pengguna']
+  username varchar(50) [unique, not null, note: 'Username untuk login']
+  email varchar(100) [unique, not null, note: 'Email pengguna']
+  password varchar(255) [not null, note: 'Password terenkripsi']
+  full_name varchar(100) [not null, note: 'Nama lengkap pengguna']
+  divisi_id integer [ref: > divisions.id, not null, note: 'FK ke tabel divisions']
+  is_active boolean [default: true, note: 'Status aktif pengguna']
+  created_at timestamp [default: `now()`, note: 'Waktu pembuatan akun']
+  updated_at timestamp [default: `now()`, note: 'Waktu update terakhir']
+  
+  indexes {
+    (username) [unique]
+    (email) [unique]
+    (divisi_id) [name: 'idx_users_divisi']
+  }
+}
+
+Table divisions {
+  id integer [pk, increment, note: 'Primary key divisi']
+  kode_divisi varchar(10) [unique, not null, note: 'Kode divisi (DIV1, DIV2, DIV3, DIV4)']
+  nama_divisi varchar(100) [not null, note: 'Nama lengkap divisi']
+  
+  indexes {
+    (kode_divisi) [unique]
+  }
+}
+
+Table jenis_surat {
+  id integer [pk, increment, note: 'Primary key jenis surat']
+  kode_jenis varchar(10) [unique, not null, note: 'Kode jenis surat (SKL, SP, dll)']
+  nama_jenis varchar(100) [not null, note: 'Nama jenis surat']
+  deskripsi text [note: 'Deskripsi jenis surat']
+  is_active boolean [default: true, note: 'Status aktif jenis surat']
+  created_at timestamp [default: `now()`, note: 'Waktu pembuatan']
+  updated_at timestamp [default: `now()`, note: 'Waktu update terakhir']
+  
+  indexes {
+    (kode_jenis) [unique]
+  }
+}
+
+Table counters {
+  id integer [pk, increment, note: 'Primary key counter bulanan']
+  jenis_surat_id integer [ref: > jenis_surat.id, not null, note: 'FK ke tabel jenis_surat']
+  month_year varchar(7) [not null, note: 'Format YYYY-MM untuk tracking bulanan']
+  counter integer [default: 0, note: 'Counter nomor urut per bulan']
+  created_at timestamp [default: `now()`, note: 'Waktu pembuatan']
+  updated_at timestamp [default: `now()`, note: 'Waktu update terakhir']
+  
+  indexes {
+    (jenis_surat_id, month_year) [unique, name: 'idx_counters_jenis_month_unique']
+    (jenis_surat_id, month_year) [name: 'idx_counters_query']
+  }
+}
+
+Table surat {
+  id integer [pk, increment, note: 'Primary key surat']
+  nomor_urut integer [not null, note: 'Nomor urut surat per bulan dalam divisi']
+  nomor_surat varchar(50) [unique, not null, note: 'Nomor lengkap: 001/DIV1/SKL/INTENS/VIII/2025']
+  divisi_id integer [ref: > divisions.id, not null, note: 'FK ke tabel divisions']
+  jenis_surat_id integer [ref: > jenis_surat.id, not null, note: 'FK ke tabel jenis_surat']
+  perihal varchar(255) [not null, note: 'Perihal/deskripsi surat']
+  tanggal_surat date [not null, note: 'Tanggal surat dibuat']
+  tanggal_diterima date [not null, note: 'Tanggal surat diterima/scan']
+  file_path varchar(500) [not null, note: 'Path file digital surat']
+  file_size integer [note: 'Ukuran file dalam bytes']
+  mime_type varchar(100) [note: 'MIME type file (pdf, jpg, dll)']
+  is_private boolean [default: false, note: 'Flag private/public surat']
+  uploaded_by integer [ref: > users.id, not null, note: 'FK pengguna yang upload']
+  created_at timestamp [default: `now()`, note: 'Waktu upload']
+  updated_at timestamp [default: `now()`, note: 'Waktu update terakhir']
+  
+  indexes {
+    (nomor_surat) [unique, name: 'idx_surat_nomor_unique']
+    (nomor_urut, divisi_id, jenis_surat_id, tanggal_surat) [unique, name: 'idx_surat_nomor_divisi_jenis_date_unique']
+    (divisi_id) [name: 'idx_surat_divisi']
+    (jenis_surat_id) [name: 'idx_surat_jenis']
+    (uploaded_by) [name: 'idx_surat_uploader']
+    (tanggal_surat) [name: 'idx_surat_tanggal']
+    (is_private) [name: 'idx_surat_privacy']
+  }
+}
+
+Table surat_access {
+  id integer [pk, increment, note: 'Primary key hak akses']
+  surat_id integer [ref: > surat.id, not null, note: 'FK ke tabel surat']
+  user_id integer [ref: > users.id, not null, note: 'FK pengguna yang diberi akses']
+  granted_at timestamp [default: `now()`, note: 'Waktu pemberian akses']
+  notes varchar(255) [note: 'Catatan pemberian akses']
+  
+  indexes {
+    (surat_id, user_id) [unique, name: 'idx_surat_access_unique']
+    (surat_id) [name: 'idx_surat_access_surat']
+    (user_id) [name: 'idx_surat_access_user']
+  }
+}
+
+Table notifications {
+  id integer [pk, increment, note: 'Primary key notifikasi']
+  user_id integer [ref: > users.id, not null, note: 'FK pengguna penerima notifikasi']
+  surat_id integer [ref: > surat.id, not null, note: 'FK surat terkait notifikasi']
+  type varchar(50) [not null, note: 'Jenis notifikasi: new_letter, letter_access_granted']
+  title varchar(255) [not null, note: 'Judul notifikasi']
+  message text [not null, note: 'Pesan notifikasi']
+  data json [note: 'Data tambahan seperti info pengirim, dll']
+  is_read boolean [default: false, note: 'Status sudah dibaca']
+  read_at timestamp [note: 'Waktu notifikasi dibaca']
+  created_at timestamp [default: `now()`, note: 'Waktu pembuatan notifikasi']
+  updated_at timestamp [default: `now()`, note: 'Waktu update terakhir']
+  
+  indexes {
+    (user_id, is_read) [name: 'idx_notifications_user_read']
+    (user_id, created_at) [name: 'idx_notifications_user_date']
+    (surat_id) [name: 'idx_notifications_surat']
+  }
+}
+
+Table nomor_urut_locks {
+  id integer [pk, increment, note: 'Primary key lock nomor urut']
+  jenis_surat_id integer [ref: > jenis_surat.id, not null, note: 'FK ke tabel jenis_surat']
+  divisi_id integer [ref: > divisions.id, not null, note: 'FK ke tabel divisions']
+  nomor_urut integer [not null, note: 'Nomor urut yang di-lock']
+  month_year varchar(7) [not null, note: 'Bulan tahun lock (YYYY-MM)']
+  locked_by integer [ref: > users.id, not null, note: 'FK pengguna yang lock']
+  locked_at timestamp [default: `now()`, note: 'Waktu lock dibuat']
+  
+  indexes {
+    (jenis_surat_id, divisi_id, nomor_urut, month_year) [unique, name: 'idx_nomor_lock_unique']
+    (locked_by) [name: 'idx_nomor_lock_user']
+    (month_year) [name: 'idx_nomor_lock_month']
+  }
+}
+
+Table audit_log {
+  id integer [pk, increment, note: 'Primary key audit log']
+  table_name varchar(50) [not null, note: 'Nama tabel yang diaudit']
+  record_id integer [not null, note: 'ID record yang diaudit']
+  action varchar(20) [not null, note: 'Aksi: INSERT, UPDATE, DELETE']
+  old_values json [note: 'Nilai lama (untuk UPDATE/DELETE)']
+  new_values json [note: 'Nilai baru (untuk INSERT/UPDATE)']
+  user_id integer [ref: > users.id, note: 'FK pengguna yang melakukan aksi']
+  timestamp timestamp [default: `now()`, note: 'Waktu aksi']
+  ip_address varchar(45) [note: 'IP address pengguna']
+  user_agent text [note: 'User agent browser']
+  
+  indexes {
+    (table_name, record_id) [name: 'idx_audit_table_record']
+    (user_id) [name: 'idx_audit_user']
+    (timestamp) [name: 'idx_audit_timestamp']
+    (action) [name: 'idx_audit_action']
+  }
+}
+
+// Relationships Summary:
+// - users.divisi_id → divisions.id (Many-to-One)
+// - surat.divisi_id → divisions.id (Many-to-One)
+// - surat.jenis_surat_id → jenis_surat.id (Many-to-One)
+// - surat.uploaded_by → users.id (Many-to-One)
+// - surat_access.surat_id → surat.id (Many-to-One)
+// - surat_access.user_id → users.id (Many-to-One)
+// - notifications.user_id → users.id (Many-to-One)
+// - notifications.surat_id → surat.id (Many-to-One)
+// - counters.jenis_surat_id → jenis_surat.id (Many-to-One)
+// - nomor_urut_locks.jenis_surat_id → jenis_surat.id (Many-to-One)
+// - nomor_urut_locks.divisi_id → divisions.id (Many-to-One)
+// - nomor_urut_locks.locked_by → users.id (Many-to-One)
+// - audit_log.user_id → users.id (Many-to-One)

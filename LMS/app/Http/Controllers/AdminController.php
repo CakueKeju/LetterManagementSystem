@@ -97,7 +97,10 @@ class AdminController extends Controller
         $divisions = Division::all();
         $jenisSurat = JenisSurat::all();
 
-        return view('admin.surat.index', compact('surat', 'divisions', 'jenisSurat'));
+        // Check if there's a letter to highlight from notification
+        $highlightLetter = $request->session()->get('highlight_letter');
+
+        return view('admin.surat.index', compact('surat', 'divisions', 'jenisSurat', 'highlightLetter'));
     }
 
     // form edit surat

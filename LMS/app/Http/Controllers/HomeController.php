@@ -97,12 +97,17 @@ class HomeController extends Controller
         }
 
         $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->active()->get();
+        
+        // Check if there's a letter to highlight from notification
+        $highlightLetter = $request->session()->get('highlight_letter');
+        
         return view('home', [
             'letters' => $letters,
             'filters' => $request->only(['divisi_id', 'jenis_surat_id', 'tanggal_surat', 'is_private', 'sort']),
             'divisions' => Division::all(),
             'jenisSurat' => $jenisSurat,
             'available_nomor_urut' => $nextNomorUrut,
+            'highlightLetter' => $highlightLetter,
         ]);
     }
 }
