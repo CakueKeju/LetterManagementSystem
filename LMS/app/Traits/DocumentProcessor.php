@@ -10,9 +10,16 @@ trait DocumentProcessor
 {
     // ================================= PROSES PDF =================================
     
+    /*
+     * DISABLED: Automatic PDF filling functionality
+     * Reason: Lacks flexibility and doesn't work reliably
+     * Date: August 25, 2025
+     */
+    
     // isi PDF dengan nomor surat, deteksi dan ganti placeholder text
     private function fillPdfWithNomorSurat($pdfPath, $nomorSurat)
     {
+        /*
         try {
             \Log::info('Mulai proses isi PDF:', [
                 'pdf_path' => $pdfPath,
@@ -250,13 +257,25 @@ trait DocumentProcessor
             ]);
             return null;
         }
+        */
+        
+        // Disabled: Return null to indicate PDF filling is not available
+        \Log::info('PDF automatic filling is disabled', [
+            'pdf_path' => $pdfPath,
+            'nomor_surat' => $nomorSurat
+        ]);
+        return null;
     }
     
+    /*
+     * DISABLED: Text position finding for PDF filling
+     */
     /**
      * Find the position of text in PDF page
      */
     private function findTextPosition($page, $searchText)
     {
+        /*
         try {
             \Log::info('Finding text position for: ' . $searchText);
             
@@ -375,13 +394,30 @@ trait DocumentProcessor
                 'original_text' => $searchText
             ];
         }
+        */
+        
+        // Disabled: Return default position for compatibility
+        return [
+            'x' => 80,
+            'y' => 180,
+            'width' => strlen($searchText) * 6,
+            'height' => 15,
+            'font_size' => 12,
+            'font_family' => 'Times',
+            'font_style' => 'B',
+            'original_text' => $searchText
+        ];
     }
     
+    /*
+     * DISABLED: PDF creation and filling functionality
+     */
     /**
      * Create filled PDF with nomor surat replacement
      */
     private function createFilledPdf($originalPath, $replacementData)
     {
+        /*
         try {
             \Log::info('Creating filled PDF:', [
                 'original_path' => $originalPath,
@@ -447,8 +483,8 @@ trait DocumentProcessor
                                 
                                 // For formal documents, position nomor surat below the title, left-aligned
                                 // Based on the template, it should be around 80-100 x, 150-200 y
-                                $x = 65; // Left side of the page
-                                $y = 57; // Below the title "BERITA ACARA SERAH TERIMA"
+                                $x = 65;
+                                $y = 57;
                                 
                                 // Ensure position is within page bounds
                                 $x = max(10, min($x, $size['width'] - 100));
@@ -578,8 +614,19 @@ trait DocumentProcessor
             ]);
             return null;
         }
+        */
+        
+        // Disabled: Return null to indicate PDF creation is not available
+        \Log::info('PDF creation and filling is disabled', [
+            'original_path' => $originalPath,
+            'replacement_count' => count($replacementData)
+        ]);
+        return null;
     }
 
+    /*
+     * DISABLED: Word to PDF conversion functionality
+     */
     /**
      * Fill Word document with nomor surat and convert to PDF
      */

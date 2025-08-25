@@ -42,11 +42,10 @@
         </div>
         
         <div class="mb-3">
-            <label for="file" class="form-label">Surat File (PDF, DOC, DOCX)</label>
-            <input type="file" class="form-control" id="file" name="file" required accept=".pdf,.doc,.docx">
+            <label for="file" class="form-label">Surat File (DOC, DOCX)</label>
+            <input type="file" class="form-control" id="file" name="file" required accept=".doc,.docx">
             <div class="form-text">
                 <strong>Format yang didukung:</strong><br>
-                • <strong>PDF:</strong> Isi nomor surat otomatis pada placeholder<br>
                 • <strong>Word (DOC/DOCX):</strong> Isi nomor surat otomatis pada placeholder<br>
             </div>
         </div>

@@ -218,7 +218,7 @@ class AdminController extends Controller
     public function handleUpload(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:pdf,doc,docx',
+            'file' => 'required|file|mimes:doc,docx',
             'divisi_id' => 'required|exists:divisions,id',
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
         ]);
@@ -227,6 +227,11 @@ class AdminController extends Controller
         $fileSize = $file->getSize();
         $mimeType = $file->getMimeType();
         $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        
+        // Additional validation for automatic mode - only Word documents
+        if (!in_array($fileExtension, ['doc', 'docx'])) {
+            return back()->withErrors(['file' => 'Mode otomatis hanya mendukung file Word (DOC/DOCX). Untuk PDF, gunakan mode manual.']);
+        }
         
         \Log::info('Admin file upload started:', [
             'original_name' => $originalName,
@@ -404,18 +409,24 @@ class AdminController extends Controller
         // Since we now convert all Word documents to PDF at upload time,
         // we only need to handle PDF files here
         if ($fileExtension === 'pdf') {
-            $filledPdfPath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
-            if ($filledPdfPath) {
-                $filePath = 'letters/filled_' . uniqid() . '.pdf';
-                \Illuminate\Support\Facades\Storage::put($filePath, file_get_contents($filledPdfPath));
-                unlink($filledPdfPath); // Hapus file temporary
-                $fileSize = \Illuminate\Support\Facades\Storage::size($filePath);
-                $mimeType = 'application/pdf';
-            } else {
-                // Use original file if filling failed
-                $fileSize = $request->input('file_size');
-                $mimeType = $request->input('mime_type');
-            }
+            // DISABLED: Automatic PDF filling - lacks flexibility
+            // $filledPdfPath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
+            // if ($filledPdfPath) {
+            //     $filePath = 'letters/filled_' . uniqid() . '.pdf';
+            //     \Illuminate\Support\Facades\Storage::put($filePath, file_get_contents($filledPdfPath));
+            //     unlink($filledPdfPath); // Hapus file temporary
+            //     $fileSize = \Illuminate\Support\Facades\Storage::size($filePath);
+            //     $mimeType = 'application/pdf';
+            // } else {
+            //     // Use original file if filling failed
+            //     $fileSize = $request->input('file_size');
+            //     $mimeType = $request->input('mime_type');
+            // }
+            
+            \Log::info('PDF automatic filling is disabled, using original file');
+            // Use original file since PDF filling is disabled
+            $fileSize = $request->input('file_size');
+            $mimeType = $request->input('mime_type');
         } else {
             // For other file types, keep original
             $fileSize = $request->input('file_size');
@@ -477,7 +488,7 @@ class AdminController extends Controller
     public function automaticHandleUpload(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:pdf,doc,docx',
+            'file' => 'required|file|mimes:doc,docx',
             'divisi_id' => 'required|exists:divisions,id',
             'jenis_surat_id' => 'required|exists:jenis_surat,id',
         ]);
@@ -487,6 +498,11 @@ class AdminController extends Controller
         $fileSize = $file->getSize();
         $mimeType = $file->getMimeType();
         $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        
+        // Additional validation for automatic mode - only Word documents
+        if (!in_array($fileExtension, ['doc', 'docx'])) {
+            return back()->withErrors(['file' => 'Mode otomatis hanya mendukung file Word (DOC/DOCX). Untuk PDF, gunakan mode manual.']);
+        }
         
         \Log::info('Admin automatic file upload started:', [
             'original_name' => $originalName,
@@ -1224,10 +1240,12 @@ class AdminController extends Controller
             $processedFilePath = null;
             
             if ($fileExtension === 'pdf') {
-                // Fill PDF with nomor surat
-                $processedFilePath = $this->fillPdfWithNomorSurat($filePath, $nomorSurat);
+                // DISABLED: Fill PDF with nomor surat - lacks flexibility
+                // $processedFilePath = $this->fillPdfWithNomorSurat($filePath, $nomorSurat);
+                \Log::info('PDF automatic filling is disabled, using original file');
+                $processedFilePath = $filePath; // Use original file
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                // Fill Word document and convert to PDF
+                // Fill Word document and convert to PDF (keep this functionality)
                 $processedFilePath = $this->fillWordWithNomorSuratAndConvertToPdf($filePath, $nomorSurat);
             }
             

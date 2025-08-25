@@ -32,7 +32,7 @@ class SuratController extends Controller
         $user = Auth::user();
         $jenisSurat = JenisSurat::where('divisi_id', $user->divisi_id)->get();
         
-        return view('surat.automatic.form', compact('jenisSurat'));
+        return view('surat.automatic.upload', compact('jenisSurat'));
     }
 
     // ==========================================================================================
@@ -41,7 +41,7 @@ class SuratController extends Controller
     {
         try {
         $request->validate([
-                'file' => 'required|file|mimes:pdf,doc,docx|max:10240', // maks 10MB
+                'file' => 'required|file|mimes:doc,docx|max:10240', // maks 10MB
                 'jenis_surat_id' => 'required|exists:jenis_surat,id',
         ]);
 
@@ -50,6 +50,12 @@ class SuratController extends Controller
         $fileSize = $file->getSize();
         $mimeType = $file->getMimeType();
             $jenisSuratId = $request->input('jenis_surat_id');
+            $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            
+            // Additional validation for automatic mode - only Word documents
+            if (!in_array($fileExtension, ['doc', 'docx'])) {
+                return back()->withErrors(['file' => 'Mode otomatis hanya mendukung file Word (DOC/DOCX). Untuk PDF, gunakan mode manual.']);
+            }
             
             \Log::info('File upload dimulai:', [
                 'original_name' => $originalName,
@@ -451,9 +457,14 @@ class SuratController extends Controller
             $finalFileSize = $request->file_size;
             
             if ($fileExtension === 'pdf') {
-                $filledFilePath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
+                // DISABLED: Automatic PDF filling - lacks flexibility
+                // $filledFilePath = $this->fillPdfWithNomorSurat($storagePath, $nomorSurat);
+                \Log::info('PDF automatic filling is disabled for flexibility', [
+                    'file' => $storagePath,
+                    'nomor_surat' => $nomorSurat
+                ]);
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
-                // Convert Word to PDF
+                // Convert Word to PDF (keep this functionality)
                 $filledFilePath = $this->fillWordWithNomorSuratAndConvertToPdf($storagePath, $nomorSurat);
                 if ($filledFilePath) {
                     $finalMimeType = 'application/pdf'; // Update mime type to PDF
@@ -1069,31 +1080,20 @@ class SuratController extends Controller
             
             // Handle both PDF files and DOCX files (if conversion failed)
             if ($fileExtension === 'pdf') {
-                // Try to fill the PDF document with nomor surat
-                $filledFilePath = null;
-                $fillingSuccess = false;
+                // DISABLED: Try to fill the PDF document with nomor surat
+                // $filledFilePath = null;
+                // $fillingSuccess = false;
                 
-                \Log::info('Attempting to fill PDF with nomor surat...');
-                $filledFilePath = $this->fillPdfWithNomorSurat($correctPath, $nomorSurat);
+                // \Log::info('Attempting to fill PDF with nomor surat...');
+                // $filledFilePath = $this->fillPdfWithNomorSurat($correctPath, $nomorSurat);
                 
-                if ($filledFilePath && file_exists($filledFilePath)) {
-                    \Log::info('PDF filled successfully: ' . $filledFilePath);
-                    $fillingSuccess = true;
-                    
-                    // Return the filled PDF for inline preview
-                    return response()->file($filledFilePath, [
-                        'Content-Type' => 'application/pdf',
-                        'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
-                    ])->deleteFileAfterSend(true);
-                } else {
-                    \Log::warning('PDF filling failed, showing original file');
-                    
-                    // Fallback: return original PDF file
-                    return response()->file($correctPath, [
-                        'Content-Type' => 'application/pdf',
-                        'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
-                    ]);
-                }
+                \Log::info('PDF automatic filling is disabled, serving original file');
+                
+                // Return the original PDF for inline preview
+                return response()->file($correctPath, [
+                    'Content-Type' => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="preview_surat.pdf"',
+                ]);
             } elseif (in_array($fileExtension, ['doc', 'docx'])) {
                 // Handle DOCX files that couldn't be converted at upload time
                 \Log::info('Handling DOCX file for preview - attempting conversion now');
