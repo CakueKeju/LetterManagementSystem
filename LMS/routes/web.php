@@ -39,6 +39,7 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
     
     Route::get('/surat/manual/form', [App\Http\Controllers\SuratController::class, 'showManualForm'])->name('surat.manual.form');
     Route::post('/surat/manual/generate', [App\Http\Controllers\SuratController::class, 'manualGenerate'])->name('surat.manual.generate');
+    Route::get('/surat/manual/generated', [App\Http\Controllers\SuratController::class, 'showManualGenerated'])->name('surat.manual.generated');
     Route::post('/surat/manual/upload', [App\Http\Controllers\SuratController::class, 'manualHandleUpload'])->name('surat.manual.handleUpload');
     Route::get('/surat/manual/result', [App\Http\Controllers\SuratController::class, 'manualVerification'])->name('surat.manual.result');
     Route::get('/surat/manual/re-edit', [App\Http\Controllers\SuratController::class, 'manualReEdit'])->name('surat.manual.reEdit');

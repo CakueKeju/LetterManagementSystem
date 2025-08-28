@@ -331,6 +331,7 @@ function previewSurat() {
 // User selection functions
 let allUsers = [];
 let filteredUsers = [];
+let selectedUserIds = new Set(); // Track selected user IDs
 
 function toggleUserSelection() {
     const isPrivate = document.getElementById('is_private').checked;
@@ -341,6 +342,7 @@ function toggleUserSelection() {
         loadUsers();
     } else {
         container.classList.add('d-none');
+        selectedUserIds.clear(); // Clear selections when hiding
     }
 }
 
@@ -360,12 +362,32 @@ function loadUsers() {
 
 function searchUsers() {
     const query = document.getElementById('userSearch').value.toLowerCase();
+    
+    // Save current selections before filtering
+    saveCurrentSelections();
+    
     filteredUsers = allUsers.filter(user => 
         user.full_name.toLowerCase().includes(query) ||
         user.username.toLowerCase().includes(query) ||
         user.email.toLowerCase().includes(query)
     );
     renderUserList();
+}
+
+function saveCurrentSelections() {
+    // Save currently checked checkboxes to selectedUserIds
+    const checkboxes = document.querySelectorAll('input[name="selected_users[]"]:checked');
+    checkboxes.forEach(checkbox => {
+        selectedUserIds.add(parseInt(checkbox.value));
+    });
+    
+    // Also remove unchecked ones
+    const allCheckboxes = document.querySelectorAll('input[name="selected_users[]"]');
+    allCheckboxes.forEach(checkbox => {
+        if (!checkbox.checked) {
+            selectedUserIds.delete(parseInt(checkbox.value));
+        }
+    });
 }
 
 function renderUserList() {
@@ -378,9 +400,10 @@ function renderUserList() {
     
     let html = '';
     filteredUsers.forEach(user => {
+        const isChecked = selectedUserIds.has(user.id) ? 'checked' : '';
         html += `
             <div class="form-check mb-2">
-                <input class="form-check-input" type="checkbox" name="selected_users[]" value="${user.id}" id="user_${user.id}">
+                <input class="form-check-input" type="checkbox" name="selected_users[]" value="${user.id}" id="user_${user.id}" ${isChecked} onchange="updateUserSelection(${user.id}, this.checked)">
                 <label class="form-check-label" for="user_${user.id}">
                     <strong>${user.full_name}</strong><br>
                     <small class="text-muted">${user.username} • ${user.email}</small>
@@ -392,12 +415,28 @@ function renderUserList() {
     userList.innerHTML = html;
 }
 
+function updateUserSelection(userId, isChecked) {
+    if (isChecked) {
+        selectedUserIds.add(userId);
+    } else {
+        selectedUserIds.delete(userId);
+    }
+}
+
 function selectAllUsers() {
     const checkboxes = document.querySelectorAll('input[name="selected_users[]"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     
     checkboxes.forEach(checkbox => {
-        checkbox.checked = !allChecked;
+        const userId = parseInt(checkbox.value);
+        const shouldCheck = !allChecked;
+        checkbox.checked = shouldCheck;
+        
+        if (shouldCheck) {
+            selectedUserIds.add(userId);
+        } else {
+            selectedUserIds.delete(userId);
+        }
     });
 }
 

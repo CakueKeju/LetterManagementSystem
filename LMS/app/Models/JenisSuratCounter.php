@@ -78,20 +78,15 @@ class JenisSuratCounter extends Model
 
             // Determine the actual last used number from reliable sources
             $actualLastUsed = max($counter->counter, $maxNomorUrut ?: 0);
-            $nextNumber = $actualLastUsed + 1;
-            
-            // Update counter to store the number we're about to use
-            $counter->update(['counter' => $nextNumber]);
-            
-            \Log::info("Incremented counter for JenisSurat {$jenisSuratId} month {$monthYear}:", [
-                'old_counter' => $counter->counter,
-                'actual_max_nomor_urut' => $maxNomorUrut,
-                'actual_last_used' => $actualLastUsed,
-                'next_number_to_use' => $nextNumber,
-                'counter_updated_to' => $nextNumber
-            ]);
-            
-            return $nextNumber;
+                // Update counter to store the number just used (actualLastUsed + 1 is the next, actualLastUsed is the last used)
+                $counter->update(['counter' => $actualLastUsed]);
+                \Log::info("Incremented counter for JenisSurat {$jenisSuratId} month {$monthYear}:", [
+                    'old_counter' => $counter->counter,
+                    'actual_max_nomor_urut' => $maxNomorUrut,
+                    'actual_last_used' => $actualLastUsed,
+                    'counter_updated_to' => $actualLastUsed
+                ]);
+                return $actualLastUsed;
         });
     }
 

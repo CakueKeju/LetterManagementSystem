@@ -160,11 +160,11 @@ class AdminController extends Controller
             'perihal' => $request->perihal,
             'tanggal_surat' => $request->tanggal_surat,
             'tanggal_diterima' => $request->tanggal_diterima,
-            'is_private' => $request->has('is_private'),
+            'is_private' => $request->boolean('is_private'),
         ]);
 
         // handle akses privat
-        if ($request->has('is_private') && $request->has('selected_users')) {
+        if ($request->boolean('is_private') && $request->has('selected_users')) {
             // Remove existing access
             SuratAccess::where('surat_id', $surat->id)->delete();
             // Add new access
@@ -380,11 +380,11 @@ class AdminController extends Controller
             'file_size' => 'required|integer',
             'mime_type' => 'required|string',
         ]);
-        \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
-            ->where('jenis_surat_id', $request->jenis_surat_id)
-            ->where('nomor_urut', $request->nomor_urut)
-            ->where('user_id', \Auth::id())
-            ->delete();
+        // Trigger immediate cleanup of expired locks
+        $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
+        if ($expiredCleaned > 0) {
+            \Log::info("Cleaned up {$expiredCleaned} expired locks during adminStore");
+        }
         if (\App\Models\Surat::where('nomor_urut', $request->nomor_urut)
             ->where('divisi_id', $request->divisi_id)
             ->where('jenis_surat_id', $request->jenis_surat_id)
@@ -607,6 +607,23 @@ class AdminController extends Controller
             unlink($processedFilePath);
         }
         
+        // Create nomor urut lock for admin (match user logic)
+        \App\Models\NomorUrutLock::createOrExtendLock(
+            $validatedData['divisi_id'],
+            $validatedData['jenis_surat_id'],
+            $validatedData['nomor_urut'],
+            Auth::id(),
+            \Carbon\Carbon::parse($validatedData['tanggal_surat'])->format('Y-m')
+        );
+        // Clean up nomor urut lock for admin automatic mode
+        \App\Models\NomorUrutLock::where('divisi_id', $validatedData['divisi_id'])
+            ->where('jenis_surat_id', $validatedData['jenis_surat_id'])
+            ->where('nomor_urut', $validatedData['nomor_urut'])
+            ->delete();
+        $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
+        if ($expiredCleaned > 0) {
+            \Log::info("Cleaned up {$expiredCleaned} expired locks during admin automaticStore");
+        }
         // Create surat record
         $surat = Surat::create([
             'nomor_surat' => $validatedData['nomor_surat'],
@@ -622,9 +639,13 @@ class AdminController extends Controller
             'uploaded_by' => Auth::id(),
             'is_private' => $validatedData['is_private'] ?? false,
         ]);
+            // Increment counter only after surat is created (samakan dengan user)
+            if (method_exists($this, 'incrementNomorUrut')) {
+                $this->incrementNomorUrut($validatedData['jenis_surat_id'], $validatedData['tanggal_surat']);
+            }
         
         // Handle private access if needed
-        if ($request->input('is_private') && $request->has('selected_users')) {
+        if ($request->boolean('is_private') && $request->has('selected_users')) {
             $selectedUsers = $request->input('selected_users', []);
             foreach ($selectedUsers as $userId) {
                 \App\Models\SuratAccess::grantAccess($surat->id, $userId);
@@ -683,6 +704,23 @@ class AdminController extends Controller
             // Extract nomor urut from nomor surat (first 3 digits)
             $nomorUrut = (int) substr($request->nomor_surat, 0, 3);
             
+            // Create nomor urut lock for admin (match user logic)
+            \App\Models\NomorUrutLock::createOrExtendLock(
+                $request->divisi_id,
+                $request->jenis_surat_id,
+                $nomorUrut,
+                Auth::id(),
+                \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m')
+            );
+            // Clean up nomor urut lock for admin manual mode
+            \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $nomorUrut)
+                ->delete();
+            $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
+            if ($expiredCleaned > 0) {
+                \Log::info("Cleaned up {$expiredCleaned} expired locks during adminManualUpload");
+            }
             // Create surat record
             $surat = Surat::create([
                 'nomor_surat' => $request->nomor_surat,
@@ -698,6 +736,15 @@ class AdminController extends Controller
                 'uploaded_by' => Auth::id(),
                 'is_private' => $request->boolean('is_private'),
             ]);
+            // Trigger immediate cleanup of expired locks
+            $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
+            if ($expiredCleaned > 0) {
+                \Log::info("Cleaned up {$expiredCleaned} expired locks during adminManualUpload");
+            }
+            // Increment counter only after surat is created (samakan dengan user)
+            if (method_exists($this, 'incrementNomorUrut')) {
+                $this->incrementNomorUrut($request->jenis_surat_id, $request->tanggal_surat);
+            }
             
             // Handle private access if needed
             if ($request->boolean('is_private') && $request->has('selected_users')) {

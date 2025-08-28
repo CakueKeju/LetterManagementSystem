@@ -87,7 +87,14 @@
                                 <div class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown" style="z-index: 1051;">
                                     <div class="dropdown-header">
                                         <strong>{{ Auth::user()->full_name ?? Auth::user()->name }}</strong><br>
-                                        <small class="text-muted">{{ Auth::user()->email }}</small>
+                                        <small class="text-muted">
+                                            <i class="fas fa-envelope me-1"></i>
+                                            {{ Auth::user()->email }}
+                                        </small><br>
+                                        <small class="text-muted">
+                                            <i class="fas fa-building me-1"></i>
+                                            {{ Auth::user()->division->nama_divisi ?? 'Tidak ada divisi' }}
+                                        </small>
                                     </div>
                                     <div class="dropdown-divider"></div>
                                     <a class="dropdown-item" href="{{ route('logout') }}"

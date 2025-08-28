@@ -62,46 +62,30 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // Create dummy users (3 for each division)
-        $userNames = [
-            'Matikanetannhauser',
-            'Agnes Tachyon',
-            'King Halo',
-            'Sweep Tosho',
-            'Gentildonna',
-            'Hishi Akebono',
-            'Mayano Top Gun',
-            'Smart Falcon',
-            'Ines Fujin',
-            'Curren Chan',
-            'T.M. Opera O',
-            'Orfevre'
+        $users = [
+            ['full_name' => 'Matikanetannhauser', 'username' => 'matikanetannhauser', 'email' => 'mambo@example.com'],
+            ['full_name' => 'Agnes Tachyon', 'username' => 'agnestachyon', 'email' => 'tachy@example.com'],
+            ['full_name' => 'King Halo', 'username' => 'kinghalo', 'email' => 'kinghalo@example.com'],
+            ['full_name' => 'Sweep Tosho', 'username' => 'sweeptosho', 'email' => 'sweeptosho@example.com'],
+            ['full_name' => 'Gentildonna', 'username' => 'gentildonna', 'email' => 'gentildonna@example.com'],
+            ['full_name' => 'Hishi Akebono', 'username' => 'hishiakebono', 'email' => 'hishiakebono@example.com'],
+            ['full_name' => 'Mayano Top Gun', 'username' => 'mayanotopgun', 'email' => 'mayanotopgun@example.com'],
+            ['full_name' => 'Smart Falcon', 'username' => 'smartfalcon', 'email' => 'smartfalcon@example.com'],
+            ['full_name' => 'Ines Fujin', 'username' => 'inesfujin', 'email' => 'inesfujin@example.com'],
+            ['full_name' => 'Curren Chan', 'username' => 'currenchan', 'email' => 'currenchan@example.com'],
+            ['full_name' => 'T.M. Opera O', 'username' => 'tmoperao', 'email' => 'TMoperao@example.com'],
+            ['full_name' => 'Orfevre', 'username' => 'orfevre', 'email' => 'orfevre@example.com']
         ];
 
         $userIndex = 0;
         foreach ($createdDivisions as $division) {
             for ($i = 0; $i < 3; $i++) {
-                $fullName = $userNames[$userIndex];
-                // Create email by shortening long names and replacing spaces with dots
-                $emailName = strtolower(str_replace(' ', '.', $fullName));
-                
-                // Shorten if too long
-                if (strlen($emailName) > 15) {
-                    $parts = explode('.', $emailName);
-                    if (count($parts) > 1) {
-                        // Take first name and first letter of last name
-                        $emailName = $parts[0] . '.' . substr($parts[1], 0, 1);
-                    } else {
-                        $emailName = substr($emailName, 0, 15);
-                    }
-                }
-                
-                // Create username from email name
-                $username = str_replace('.', '', $emailName);
+                $userData = $users[$userIndex];
                 
                 User::create([
-                    'username' => $username,
-                    'full_name' => $fullName,
-                    'email' => $emailName . '@example.com',
+                    'username' => $userData['username'],
+                    'full_name' => $userData['full_name'],
+                    'email' => $userData['email'],
                     'password' => Hash::make('password123'),
                     'divisi_id' => $division->id,
                     'is_active' => true,

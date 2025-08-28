@@ -34,7 +34,7 @@ Sistema pengelolaan surat berbasis Laravel dengan fitur counter otomatis per bul
 
 ### Requirements
 - PHP 8.1+
-- Laravel 11
+- Laravel 12.20.0
 - SQLite/MySQL/PostgreSQL
 - LibreOffice (Konversi Word ke PDF)
 - Composer

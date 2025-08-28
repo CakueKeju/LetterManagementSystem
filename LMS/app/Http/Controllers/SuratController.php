@@ -25,6 +25,28 @@ class SuratController extends Controller
     use DocumentProcessor;
     use RomanNumeralConverter;
 
+    /**
+     * Cancel nomor urut lock for manual mode (user)
+     */
+    public function cancelManualNomorUrutLock(Request $request)
+    {
+        $userId = Auth::id();
+        $cancelled = NomorUrutLock::cancelUserLocks($userId);
+        $expiredCleaned = NomorUrutLock::cleanupExpiredLocks();
+        \Log::info('Manual mode lock cleanup by user cancel', [
+            'user_id' => $userId,
+            'cancelled_user_locks' => $cancelled,
+            'cleaned_expired_locks' => $expiredCleaned
+        ]);
+        return response()->json([
+            'success' => true,
+            'cancelled_locks' => $cancelled,
+            'cleaned_expired_locks' => $expiredCleaned
+        ]);
+    }
+    use DocumentProcessor;
+    use RomanNumeralConverter;
+
     // ==========================================================================================
     // Form Upload
     public function showUploadForm()
@@ -332,7 +354,7 @@ class SuratController extends Controller
                     'perihal' => $request->perihal,
                     'tanggal_surat' => $request->tanggal_surat,
                     'tanggal_diterima' => $request->tanggal_diterima,
-                    'is_private' => $request->has('is_private'),
+                    'is_private' => $request->boolean('is_private'),
                     'selected_users' => $request->selected_users ?? []
                 ]
             ]);
@@ -396,6 +418,15 @@ class SuratController extends Controller
             $expiredCleaned = NomorUrutLock::cleanupExpiredLocks();
             if ($expiredCleaned > 0) {
                 \Log::info("Cleaned up {$expiredCleaned} expired locks during finalStore");
+            }
+            // Clean up nomor urut lock for user manual mode (delete all matching locks, not just user)
+            NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $request->nomor_urut)
+                ->delete();
+            $expiredCleaned = NomorUrutLock::cleanupExpiredLocks();
+            if ($expiredCleaned > 0) {
+                \Log::info("Cleaned up {$expiredCleaned} expired locks during finalStore (manual mode)");
             }
 
         // Cek duplikasi nomor urut untuk bulan yang sama
@@ -500,21 +531,14 @@ class SuratController extends Controller
                 'file_path' => $filePath,
                 'file_size' => $finalFileSize,
                 'mime_type' => $finalMimeType,
-                'is_private' => $request->has('is_private'),
+                'is_private' => $request->boolean('is_private'),
             'uploaded_by' => Auth::id(),
         ]);
-
-            // NOW increment the counter in JenisSurat since letter is actually stored
-            $this->incrementNomorUrut($request->jenis_surat_id, $request->tanggal_surat);
+        // Increment counter only after surat is created
+        $this->incrementNomorUrut($request->jenis_surat_id, $request->tanggal_surat);
             
-            \Log::info('Letter successfully stored and counter incremented', [
-                'surat_id' => $surat->id,
-                'nomor_surat' => $nomorSurat,
-                'jenis_surat_id' => $request->jenis_surat_id
-            ]);
-
             // Handle private access
-            if ($request->has('is_private') && $request->has('selected_users')) {
+            if ($request->boolean('is_private') && $request->has('selected_users')) {
                 foreach ($request->selected_users as $userId) {
                     \App\Models\SuratAccess::create([
                         'surat_id' => $surat->id,
@@ -597,7 +621,7 @@ class SuratController extends Controller
                 'file_path' => $request->file_path,
                 'file_size' => $request->file_size,
                 'mime_type' => $request->mime_type,
-                'is_private' => $request->has('is_private'),
+                'is_private' => $request->boolean('is_private'),
                 'uploaded_by' => Auth::id(),
             ]);
             
@@ -884,7 +908,7 @@ class SuratController extends Controller
                 }
                 
                 // Check for year only patterns
-                if (preg_match('/(?:tahun\s+)?(dua\s+ribu\s+(?:dua\s+puluh\s+)?(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan))/i', $dateStr, $yearMatches)) {
+                if (preg_match('/(?:tahun\s+)?(dua\s+ribu\s+(?:dua\s+puluh\s+)?(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan))/i', $yearMatches)) {
                     $year = $this->parseIndonesianYear($yearMatches[1]);
                     if ($year) {
                         \Log::info("Parsed year only: $year");
@@ -957,24 +981,31 @@ class SuratController extends Controller
         $monthYear = $tanggalSurat ? 
             \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
             \Carbon\Carbon::now()->format('Y-m');
-            
+        \Log::info('getNextNomorUrut called', [
+            'divisi_id' => $divisiId,
+            'jenis_surat_id' => $jenisSuratId,
+            'month_year' => $monthYear
+        ]);
         // Get jenis surat with counter
         $jenisSurat = JenisSurat::find($jenisSuratId);
         if (!$jenisSurat) {
             \Log::error('Jenis surat not found: ' . $jenisSuratId);
             return null;
         }
-        
         // Peek next counter WITHOUT incrementing (for preview/lock purposes)
         $nextCounter = $jenisSurat->peekNextCounter($monthYear);
-        
+        \Log::info('Peek next counter result', [
+            'next_counter' => $nextCounter
+        ]);
         // Hapus lock lama user ini di divisi yang sama setelah update real-time
         if (\Auth::check()) {
             $deletedLocks = NomorUrutLock::where('user_id', \Auth::id())
                 ->where('divisi_id', $divisiId)
                 ->delete();
+            \Log::info('Deleted old locks', [
+                'deleted_locks' => $deletedLocks
+            ]);
         }
-        
         return $nextCounter;
     }
 
@@ -985,17 +1016,18 @@ class SuratController extends Controller
         $monthYear = $tanggalSurat ? 
             \Carbon\Carbon::parse($tanggalSurat)->format('Y-m') : 
             \Carbon\Carbon::now()->format('Y-m');
-            
-        $jenisSurat = JenisSurat::find($jenisSuratId);
-        if (!$jenisSurat) {
-            \Log::error('Jenis surat not found for increment: ' . $jenisSuratId);
-            return null;
-        }
-        
-        // Actually increment the counter for the specific month
-        $finalCounter = $jenisSurat->incrementCounter($monthYear);
-        
-        return $finalCounter;
+        \Log::info('incrementNomorUrut called (using JenisSuratCounter::incrementForMonth)', [
+            'jenis_surat_id' => $jenisSuratId,
+            'month_year' => $monthYear
+        ]);
+        // Gunakan model JenisSuratCounter agar update konsisten
+        $result = \App\Models\JenisSuratCounter::incrementForMonth($jenisSuratId, $monthYear);
+        \Log::info('incrementForMonth result', [
+            'jenis_surat_id' => $jenisSuratId,
+            'month_year' => $monthYear,
+            'result' => $result
+        ]);
+        return $result;
     }
 
     // Helper: Lock nomor urut for a specific user
@@ -1081,12 +1113,7 @@ class SuratController extends Controller
             // Handle both PDF files and DOCX files (if conversion failed)
             if ($fileExtension === 'pdf') {
                 // DISABLED: Try to fill the PDF document with nomor surat
-                // $filledFilePath = null;
-                // $fillingSuccess = false;
-                
-                // \Log::info('Attempting to fill PDF with nomor surat...');
                 // $filledFilePath = $this->fillPdfWithNomorSurat($correctPath, $nomorSurat);
-                
                 \Log::info('PDF automatic filling is disabled, serving original file');
                 
                 // Return the original PDF for inline preview
@@ -1292,7 +1319,7 @@ class SuratController extends Controller
                 'perihal' => $request->perihal,
                 'tanggal_surat' => $request->tanggal_surat,
                 'tanggal_diterima' => $request->tanggal_diterima ?: date('Y-m-d'),
-                'is_private' => $request->has('is_private'),
+                'is_private' => $request->boolean('is_private'),
                 'selected_users' => $request->selected_users ?? [],
                 'generated_at' => now()
             ];
@@ -1374,8 +1401,23 @@ class SuratController extends Controller
     public function manualHandleUpload(Request $request)
     {
         try {
+            \Log::info('Manual upload request received', [
+                'has_file' => $request->hasFile('file'),
+                'file_info' => $request->file('file') ? [
+                    'original_name' => $request->file('file')->getClientOriginalName(),
+                    'mime_type' => $request->file('file')->getMimeType(),
+                    'size' => $request->file('file')->getSize()
+                ] : null
+            ]);
             $request->validate([
                 'file' => 'required|file|mimes:pdf,doc,docx|max:10240',
+            ]);
+            \Log::info('Manual upload file validated', [
+                'file_info' => $request->file('file') ? [
+                    'original_name' => $request->file('file')->getClientOriginalName(),
+                    'mime_type' => $request->file('file')->getMimeType(),
+                    'size' => $request->file('file')->getSize()
+                ] : null
             ]);
 
             // Try to get data from session first
@@ -1448,20 +1490,66 @@ class SuratController extends Controller
             // Convert DOCX to PDF if needed
             if (in_array($fileExtension, ['doc', 'docx'])) {
                 $fullPath = storage_path('app/' . $filePath);
+                \Log::info('Proses manual upload DOCX/DOC dimulai', [
+                    'file_path' => $filePath,
+                    'full_path' => $fullPath,
+                    'file_exists' => file_exists($fullPath),
+                    'file_size' => $fileSize,
+                    'mime_type' => $mimeType
+                ]);
                 $convertedPdfPath = $this->convertWordToPdfWithLibreOffice($fullPath);
-                
+                \Log::info('Hasil konversi DOCX ke PDF', [
+                    'convertedPdfPath' => $convertedPdfPath,
+                    'converted_exists' => $convertedPdfPath ? file_exists($convertedPdfPath) : false
+                ]);
                 if ($convertedPdfPath && file_exists($convertedPdfPath)) {
                     $pdfDescriptiveName = str_replace('.' . $fileExtension, '.pdf', $descriptiveName);
                     $newFilePath = 'letters/' . $pdfDescriptiveName;
-                    
-                    Storage::put($newFilePath, file_get_contents($convertedPdfPath));
-                    unlink($convertedPdfPath);
+                    // Simpan file PDF hasil konversi ke storage dan pastikan juga ada di filesystem
+                    $filesystemPath = storage_path('app/' . $newFilePath);
+                    if (file_exists($convertedPdfPath) && !file_exists($filesystemPath)) {
+                        copy($convertedPdfPath, $filesystemPath);
+                        \Log::info('PDF hasil konversi dicopy ke filesystem', [
+                            'from' => $convertedPdfPath,
+                            'to' => $filesystemPath,
+                            'copy_success' => file_exists($filesystemPath)
+                        ]);
+                        unlink($convertedPdfPath);
+                    } else if (file_exists($filesystemPath)) {
+                        \Log::info('PDF hasil konversi sudah tersedia di filesystem, tidak perlu copy.', [
+                            'filesystem_path' => $filesystemPath
+                        ]);
+                    } else {
+                        \Log::error('PDF hasil konversi tidak ditemukan di temp maupun filesystem.', [
+                            'convertedPdfPath' => $convertedPdfPath,
+                            'filesystemPath' => $filesystemPath
+                        ]);
+                    }
                     Storage::delete($filePath);
-                    
                     $filePath = $newFilePath;
                     $fileExtension = 'pdf';
                     $mimeType = 'application/pdf';
-                    $fileSize = Storage::size($filePath);
+                    if (Storage::exists($filePath)) {
+                        $fileSize = Storage::size($filePath);
+                    } else {
+                        \Log::error('File hasil konversi tidak ditemukan saat ingin mengambil ukuran.', [
+                            'file_path' => $filePath
+                        ]);
+                        $fileSize = 0;
+                    }
+                    \Log::info('File DOCX berhasil dikonversi dan disimpan sebagai PDF', [
+                        'new_file_path' => $filePath,
+                        'file_size' => $fileSize,
+                        'filesystem_path' => $filesystemPath,
+                        'filesystem_exists' => file_exists($filesystemPath)
+
+                    ]);
+                } else {
+                    // Konversi gagal, file tetap DOCX, proses ekstraksi/verifikasi tetap pakai PHPWord
+                    \Log::warning('Konversi DOCX ke PDF gagal, lanjutkan proses dengan file DOCX asli.', [
+                        'file_path' => $filePath,
+                        'full_path' => $fullPath
+                    ]);
                 }
             }
 
@@ -1474,13 +1562,54 @@ class SuratController extends Controller
                 try {
                     $extractionMethod = 'PDF Parser';
                     $parser = new \Smalot\PdfParser\Parser();
-                    $fullPath = storage_path('app/' . $filePath);
+                    // Gunakan path file PDF yang benar di filesystem
+                    $fullPath = Storage::path($filePath);
+                    \Log::info('Ekstraksi teks dari PDF dimulai', [
+                        'file_path' => $filePath,
+                        'full_path' => $fullPath,
+                        'file_exists' => file_exists($fullPath)
+                    ]);
                     $pdf = $parser->parseFile($fullPath);
                     foreach ($pdf->getPages() as $page) {
                         $extractedText .= $page->getText() . ' ';
                     }
+                    \Log::info('Hasil ekstraksi teks PDF', [
+                        'extractedText' => substr($extractedText, 0, 500)
+                    ]);
                 } catch (\Exception $e) {
                     $ocrError = 'Error ekstraksi teks (PDF Parser): ' . $e->getMessage();
+                    \Log::error($ocrError);
+                }
+            } elseif ($fileExtension === 'docx' || $fileExtension === 'doc') {
+                try {
+                    $extractionMethod = 'PHPWord';
+                    $fullPath = storage_path('app/' . $filePath);
+                    \Log::info('Ekstraksi teks dari DOCX/DOC dimulai', [
+                        'file_path' => $filePath,
+                        'full_path' => $fullPath,
+                        'file_exists' => file_exists($fullPath)
+                    ]);
+                    $phpWord = \PhpOffice\PhpWord\IOFactory::load($fullPath);
+                    foreach ($phpWord->getSections() as $section) {
+                        $elements = $section->getElements();
+                        foreach ($elements as $element) {
+                            if (method_exists($element, 'getText')) {
+                                $extractedText .= $element->getText() . ' ';
+                            } elseif (method_exists($element, 'getElements')) {
+                                foreach ($element->getElements() as $subElement) {
+                                    if (method_exists($subElement, 'getText')) {
+                                        $extractedText .= $subElement->getText() . ' ';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    \Log::info('Hasil ekstraksi teks DOCX/DOC', [
+                        'extractedText' => substr($extractedText, 0, 500)
+                    ]);
+                } catch (\Exception $e) {
+                    $ocrError = 'Error ekstraksi teks (PHPWord): ' . $e->getMessage();
+                    \Log::error($ocrError);
                 }
             }
 
@@ -1505,8 +1634,6 @@ class SuratController extends Controller
                     'uploaded_by' => Auth::id(),
                 ]);
 
-                // Increment counter
-                $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
 
                 // Handle private surat access
                 if ($data['is_private'] && !empty($data['selected_users'])) {
@@ -1524,6 +1651,9 @@ class SuratController extends Controller
                     ->where('nomor_urut', $data['nomor_urut'])
                     ->where('user_id', Auth::id())
                     ->delete();
+
+                // Increment counter setelah surat disimpan
+                $this->incrementNomorUrut($data['jenis_surat_id'], $data['tanggal_surat']);
 
                 // Create notifications for the new letter
                 $notificationService = new NotificationService();
