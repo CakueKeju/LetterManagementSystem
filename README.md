@@ -1,6 +1,6 @@
 # Letter Management System (LMS)
 
-A modern web-based platform for uploading, managing, and searching official letters within organizations. Built with Laravel 11, Bootstrap 5, and intelligent document processing with real-time notifications.
+A modern web-based platform for uploading, managing, and searching official letters within organizations. Built with Laravel 12, Bootstrap 5, and intelligent document processing with real-time notifications.
 
 ## ✨ Features
 
@@ -47,7 +47,7 @@ npm run dev & php artisan serve
 
 | Component | Technology |
 |-----------|------------|
-| **Backend** | Laravel 11, PHP 8.2+ |
+| **Backend** | Laravel 12.20.0, PHP 8.2+ |
 | **Frontend** | Bootstrap 5, Font Awesome 6, Vanilla JS, Vite |
 | **Database** | MySQL with Eloquent ORM |
 | **Document Processing** | PDF Parser, PHPWord, Tesseract OCR |
