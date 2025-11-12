@@ -674,6 +674,19 @@ class AdminController extends Controller
      * Handle manual upload for admin
      */
     public function manualHandleUpload(Request $request)
+            // Clean up nomor urut lock for admin manual mode on successful submit
+            $deleted = \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $nomorUrut)
+                ->where('user_id', Auth::id())
+                ->delete();
+            \Log::debug('Admin manual: Lock cleanup on submit', [
+                'deleted_count' => $deleted,
+                'user_id' => Auth::id(),
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'nomor_urut' => $nomorUrut,
+            ]);
     {
         $request->validate([
             'file' => 'required|file|mimes:pdf,doc,docx',
@@ -705,18 +718,24 @@ class AdminController extends Controller
             $nomorUrut = (int) substr($request->nomor_surat, 0, 3);
             
             // Create nomor urut lock for admin (match user logic)
-            \App\Models\NomorUrutLock::createOrExtendLock(
+            $lock = \App\Models\NomorUrutLock::createOrExtendLock(
                 $request->divisi_id,
                 $request->jenis_surat_id,
                 $nomorUrut,
                 Auth::id(),
                 \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m')
             );
-            // Clean up nomor urut lock for admin manual mode
-            \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
-                ->where('jenis_surat_id', $request->jenis_surat_id)
-                ->where('nomor_urut', $nomorUrut)
-                ->delete();
+            \Log::debug('Admin manual: Lock created', [
+                'lock_id' => $lock->id ?? null,
+                'user_id' => Auth::id(),
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'nomor_urut' => $nomorUrut,
+                'month_year' => \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m'),
+            ]);
+
+            // ...lock cleanup removed; lock will be deleted only on cancel/exit via API...
+
             $expiredCleaned = \App\Models\NomorUrutLock::cleanupExpiredLocks();
             if ($expiredCleaned > 0) {
                 \Log::info("Cleaned up {$expiredCleaned} expired locks during adminManualUpload");
@@ -874,28 +893,42 @@ class AdminController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        $data = [
-            'username' => $request->username,
-            'full_name' => $request->full_name,
-            'email' => $request->email,
-            'divisi_id' => $request->divisi_id,
-            'is_admin' => $request->has('is_admin'),
-            'is_active' => $request->has('is_active'),
-        ];
+        try {
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+            // ...existing code...
+            $lock = \App\Models\NomorUrutLock::createOrExtendLock(
+                $request->divisi_id,
+                $request->jenis_surat_id,
+                $nomorUrut,
+                Auth::id(),
+                \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m')
+            );
+            \Log::debug('Admin manual: Lock created', [
+                'lock_id' => $lock->id ?? null,
+                'user_id' => Auth::id(),
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'nomor_urut' => $nomorUrut,
+                'month_year' => \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m'),
+            ]);
 
-        if ($request->filled('password')) {
-            $data['password'] = Hash::make($request->password);
-        }
-
-        $user->update($data);
-
-        return redirect()->route('admin.users.index')->with('success', 'User berhasil diperbarui!');
-    }
-
-    /**
-     * Delete user
-     */
-    public function usersDestroy($id)
+            // Clean up nomor urut lock for admin manual mode on successful submit
+            $deleted = \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $nomorUrut)
+                ->where('user_id', Auth::id())
+                ->delete();
+            \Log::debug('Admin manual: Lock cleanup on submit', [
+                'deleted_count' => $deleted,
+                'user_id' => Auth::id(),
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'nomor_urut' => $nomorUrut,
+            ]);
+            // ...existing code...
     {
         $user = User::findOrFail($id);
         
