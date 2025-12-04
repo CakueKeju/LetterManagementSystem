@@ -674,19 +674,6 @@ class AdminController extends Controller
      * Handle manual upload for admin
      */
     public function manualHandleUpload(Request $request)
-            // Clean up nomor urut lock for admin manual mode on successful submit
-            $deleted = \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
-                ->where('jenis_surat_id', $request->jenis_surat_id)
-                ->where('nomor_urut', $nomorUrut)
-                ->where('user_id', Auth::id())
-                ->delete();
-            \Log::debug('Admin manual: Lock cleanup on submit', [
-                'deleted_count' => $deleted,
-                'user_id' => Auth::id(),
-                'divisi_id' => $request->divisi_id,
-                'jenis_surat_id' => $request->jenis_surat_id,
-                'nomor_urut' => $nomorUrut,
-            ]);
     {
         $request->validate([
             'file' => 'required|file|mimes:pdf,doc,docx',
@@ -732,6 +719,20 @@ class AdminController extends Controller
                 'jenis_surat_id' => $request->jenis_surat_id,
                 'nomor_urut' => $nomorUrut,
                 'month_year' => \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m'),
+            ]);
+
+            // Clean up nomor urut lock for admin manual mode on successful submit
+            $deleted = \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
+                ->where('jenis_surat_id', $request->jenis_surat_id)
+                ->where('nomor_urut', $nomorUrut)
+                ->where('user_id', Auth::id())
+                ->delete();
+            \Log::debug('Admin manual: Lock cleanup on submit', [
+                'deleted_count' => $deleted,
+                'user_id' => Auth::id(),
+                'divisi_id' => $request->divisi_id,
+                'jenis_surat_id' => $request->jenis_surat_id,
+                'nomor_urut' => $nomorUrut,
             ]);
 
             // ...lock cleanup removed; lock will be deleted only on cancel/exit via API...
@@ -893,42 +894,15 @@ class AdminController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        try {
-            $file = $request->file('file');
-            $originalName = $file->getClientOriginalName();
-            $fileSize = $file->getSize();
-            $mimeType = $file->getMimeType();
-            // ...existing code...
-            $lock = \App\Models\NomorUrutLock::createOrExtendLock(
-                $request->divisi_id,
-                $request->jenis_surat_id,
-                $nomorUrut,
-                Auth::id(),
-                \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m')
-            );
-            \Log::debug('Admin manual: Lock created', [
-                'lock_id' => $lock->id ?? null,
-                'user_id' => Auth::id(),
-                'divisi_id' => $request->divisi_id,
-                'jenis_surat_id' => $request->jenis_surat_id,
-                'nomor_urut' => $nomorUrut,
-                'month_year' => \Carbon\Carbon::parse($request->tanggal_surat)->format('Y-m'),
-            ]);
+        $user->update($data);
 
-            // Clean up nomor urut lock for admin manual mode on successful submit
-            $deleted = \App\Models\NomorUrutLock::where('divisi_id', $request->divisi_id)
-                ->where('jenis_surat_id', $request->jenis_surat_id)
-                ->where('nomor_urut', $nomorUrut)
-                ->where('user_id', Auth::id())
-                ->delete();
-            \Log::debug('Admin manual: Lock cleanup on submit', [
-                'deleted_count' => $deleted,
-                'user_id' => Auth::id(),
-                'divisi_id' => $request->divisi_id,
-                'jenis_surat_id' => $request->jenis_surat_id,
-                'nomor_urut' => $nomorUrut,
-            ]);
-            // ...existing code...
+        return redirect()->route('admin.users.index')->with('success', 'User berhasil diperbarui!');
+    }
+
+    /**
+     * Delete user
+     */
+    public function usersDestroy($id)
     {
         $user = User::findOrFail($id);
         
